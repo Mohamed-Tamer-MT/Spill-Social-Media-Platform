@@ -1,0 +1,14 @@
+meta {
+  name: Like Post
+  type: http
+  seq: 1
+}
+
+put {
+  url: {{baseUrl}}/posts/{{postId}}/like
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}

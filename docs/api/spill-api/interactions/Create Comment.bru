@@ -1,0 +1,28 @@
+meta {
+  name: Create Comment
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/posts/{{postId}}/comments
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "body": "Great post!"
+  }
+}
+
+script:post-response {
+  if (res.status === 201) {
+    var body = res.getBody();
+    bru.setVar("commentId", body.id);
+  }
+}

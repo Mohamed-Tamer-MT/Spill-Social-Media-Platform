@@ -1,0 +1,22 @@
+meta {
+  name: Request Code
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/auth/request-code
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "email": "{{testEmail}}"
+  }
+}
+
+script:post-response {
+  // 202 is always returned (prevents email enumeration)
+  bru.setVar("lastRequestCodeStatus", res.status);
+}

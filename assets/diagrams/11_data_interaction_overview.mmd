@@ -1,0 +1,15 @@
+flowchart LR
+    subgraph Write Path
+        W1[Auth] --> PG1[(users, login_codes,<br/>refresh_tokens)]
+        W2[Posts / Comments] --> PG2[(posts, comments,<br/>post_assets)]
+        W3[Likes / Shares / Follows] --> PG3[(likes, shares, follows<br/>+ counters)]
+        W4[Assets] --> PG4[(assets)]
+        W4 --> OBJ[(Object Storage)]
+    end
+
+    subgraph Read Path
+        R1[Profile / Post / Feed reads] --> PGR[(Postgres + B-tree indexes)]
+        R3[Search] --> GIN[(GIN indexes in Postgres)]
+    end
+
+    PG2 -. "generated tsvector" .-> GIN

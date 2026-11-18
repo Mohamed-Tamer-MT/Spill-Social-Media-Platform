@@ -1,0 +1,9 @@
+Limit  (cost=0.28..8.29 rows=1 width=92) (actual time=0.007..0.013 rows=20 loops=1)
+  Output: id, author_id, body, like_count, comment_count, share_count, created_at, edited_at
+  Buffers: shared hit=7
+  ->  Index Scan using idx_posts_author_timeline on public.posts p  (cost=0.28..8.29 rows=1 width=92) (actual time=0.006..0.011 rows=20 loops=1)
+        Output: id, author_id, body, like_count, comment_count, share_count, created_at, edited_at
+        Index Cond: (p.author_id = '432d77df-14a9-461e-9a66-8a622ea6f352'::uuid)
+        Buffers: shared hit=7
+Planning Time: 0.042 ms
+Execution Time: 0.021 ms

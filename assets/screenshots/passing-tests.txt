@@ -1,0 +1,15 @@
+?   	github.com/TheAmgadX/Spill-Social-Media-Platform/cmd	[no test files]
+?   	github.com/TheAmgadX/Spill-Social-Media-Platform/cmd/seed	[no test files]
+?   	github.com/TheAmgadX/Spill-Social-Media-Platform/cmd/verify	[no test files]
+ok  	github.com/TheAmgadX/Spill-Social-Media-Platform/internal/auth	1.019s
+?   	github.com/TheAmgadX/Spill-Social-Media-Platform/internal/config	[no test files]
+ok  	github.com/TheAmgadX/Spill-Social-Media-Platform/internal/controllers	12.699s
+?   	github.com/TheAmgadX/Spill-Social-Media-Platform/internal/db	[no test files]
+?   	github.com/TheAmgadX/Spill-Social-Media-Platform/internal/mailer	[no test files]
+ok  	github.com/TheAmgadX/Spill-Social-Media-Platform/internal/middleware	1.019s
+ok  	github.com/TheAmgadX/Spill-Social-Media-Platform/internal/models	10.252s
+ok  	github.com/TheAmgadX/Spill-Social-Media-Platform/internal/routes	13.206s
+ok  	github.com/TheAmgadX/Spill-Social-Media-Platform/internal/services	12.671s
+?   	github.com/TheAmgadX/Spill-Social-Media-Platform/internal/storage	[no test files]
+ok  	github.com/TheAmgadX/Spill-Social-Media-Platform/internal/testhelper	12.583s
+?   	github.com/TheAmgadX/Spill-Social-Media-Platform/internal/views	[no test files]

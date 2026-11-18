@@ -1,0 +1,1476 @@
+openapi: 3.1.0
+info:
+  title: Spill Social Media Platform API
+  version: 1.0.0
+  description: |
+    REST API contract for the Spill social media platform.
+
+    ## Authentication
+    All protected endpoints require a Bearer JWT in the `Authorization` header.
+    Access tokens expire after 15 minutes; use the refresh endpoint to rotate.
+
+    ## Pagination
+    List endpoints use **keyset cursors**. The `cursor` query parameter is an
+    opaque base64-encoded string derived from `(createdAt, id)`. Clients must
+    not parse or construct cursors — just pass the `nextCursor` value from
+    the previous response. Default `limit` is **20**; maximum is **50**.
+
+    ## Errors
+    All errors use [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json`.
+
+    ## Idempotency
+    `PUT /posts/{id}/like` and `PUT /users/{id}/follow` return **200** with
+    the current state whether or not anything actually changed (insert-on-conflict-do-nothing).
+
+    ## Naming Conventions
+    - Paths: plural nouns, lowercase kebab-case.
+    - JSON fields: camelCase.
+
+    ## Proposed Validation Limits (pending team confirmation)
+    | Field | Constraint |
+    |---|---|
+    | `displayName` | 1–50 characters |
+    | `username` | 3–20 characters, `^[a-z0-9_]{3,20}$` |
+    | `post body` | 1–2 000 characters |
+    | `comment body` | 1–500 characters |
+    | `asset mimeType` | `image/jpeg`, `image/png`, `image/webp` |
+    | `asset sizeBytes` | 1 byte – 5 242 880 bytes (5 MB) |
+
+  contact:
+    name: Spill Engineering
+  license:
+    name: MIT
+    identifier: MIT
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local development
+
+tags:
+  - name: Auth
+    description: Passwordless email-code authentication
+  - name: Users
+    description: User profiles and follow graph
+  - name: Posts
+    description: Create, read, update, and delete posts
+  - name: Interactions
+    description: Likes, comments, and shares
+  - name: Assets
+    description: Presigned image uploads
+  - name: Search
+    description: Full-text search across users, posts, and comments
+  - name: Feed
+    description: Home timeline
+
+# ─────────────────────────────────────────────────────────────
+# Reusable components
+# ─────────────────────────────────────────────────────────────
+components:
+
+  # ── Security ───────────────────────────────────────────────
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access JWT (sub=userId, role, exp). 15 min lifetime.
+
+  # ── Parameters ─────────────────────────────────────────────
+  parameters:
+    CursorParam:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque base64 keyset cursor from a previous response's `nextCursor`.
+      schema:
+        type: string
+    LimitParam:
+      name: limit
+      in: query
+      required: false
+      description: Number of items per page. Default 20, max 50.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 20
+    PostIdParam:
+      name: id
+      in: path
+      required: true
+      description: Post UUID.
+      schema:
+        type: string
+        format: uuid
+    UserIdParam:
+      name: id
+      in: path
+      required: true
+      description: User UUID.
+      schema:
+        type: string
+        format: uuid
+    UsernameParam:
+      name: username
+      in: path
+      required: true
+      description: Unique username (case-insensitive).
+      schema:
+        type: string
+        pattern: "^[a-z0-9_]{3,20}$"
+    AssetIdParam:
+      name: id
+      in: path
+      required: true
+      description: Asset UUID.
+      schema:
+        type: string
+        format: uuid
+    CommentIdParam:
+      name: id
+      in: path
+      required: true
+      description: Comment UUID.
+      schema:
+        type: string
+        format: uuid
+
+  # ── Schemas ────────────────────────────────────────────────
+  schemas:
+
+    # ── Error (RFC 9457) ────────────────────────────────────
+    ProblemDetail:
+      type: object
+      required: [type, title, status, detail, requestId]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: A URI reference identifying the problem type.
+          examples: ["https://api.spill.social/problems/validation-error"]
+        title:
+          type: string
+          description: Short human-readable summary.
+          examples: ["Validation Error"]
+        status:
+          type: integer
+          description: HTTP status code.
+          examples: [422]
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence.
+          examples: ["Field 'body' must be between 1 and 2000 characters."]
+        requestId:
+          type: string
+          description: Correlation ID for support/debugging.
+          examples: ["req_abc123"]
+
+    # ── Pagination envelope ─────────────────────────────────
+    PaginationMeta:
+      type: object
+      required: [limit, hasMore]
+      properties:
+        nextCursor:
+          type:
+            - string
+            - "null"
+          description: Opaque cursor to fetch the next page. Null when no more items.
+        limit:
+          type: integer
+          description: Items per page.
+        hasMore:
+          type: boolean
+          description: True when more items exist beyond this page.
+
+    # ── Auth DTOs ───────────────────────────────────────────
+    RequestCodeRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+
+    VerifyCodeRequest:
+      type: object
+      required: [email, code]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        code:
+          type: string
+          minLength: 6
+          maxLength: 6
+          pattern: "^[0-9]{6}$"
+
+    VerifyCodeResponse:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [login, signup]
+          description: "`login` when the user already exists, `signup` when they need to register."
+        accessToken:
+          type: string
+          description: Present when `action` is `login`.
+        refreshToken:
+          type: string
+          description: Present when `action` is `login`.
+        signupToken:
+          type: string
+          description: Present when `action` is `signup`. Short-lived JWT carrying the verified email claim.
+
+    SignupRequest:
+      type: object
+      required: [username, displayName, birthdate]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 20
+          pattern: "^[a-z0-9_]{3,20}$"
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 50
+        birthdate:
+          type: string
+          format: date
+          description: "ISO 8601 date. User must be ≥ 13 years old."
+
+    SignupResponse:
+      type: object
+      required: [accessToken, refreshToken, user]
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          $ref: "#/components/schemas/PrivateUserResponse"
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    TokenResponse:
+      type: object
+      required: [accessToken, refreshToken]
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+
+    LogoutRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    # ── User DTOs ───────────────────────────────────────────
+    PublicUserResponse:
+      type: object
+      description: Public profile — excludes email and birthdate.
+      required: [id, username, displayName, role, followerCount, followingCount, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        displayName:
+          type: string
+        avatarUrl:
+          type:
+            - string
+            - "null"
+          format: uri
+        role:
+          type: string
+          enum: [user, admin]
+        followerCount:
+          type: integer
+        followingCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    PrivateUserResponse:
+      type: object
+      description: Full profile returned only by GET /me. Includes email and birthdate.
+      required: [id, username, email, displayName, birthdate, role, followerCount, followingCount, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        birthdate:
+          type: string
+          format: date
+        avatarUrl:
+          type:
+            - string
+            - "null"
+          format: uri
+        role:
+          type: string
+          enum: [user, admin]
+        followerCount:
+          type: integer
+        followingCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    UpdateMeRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 50
+        avatarAssetId:
+          type:
+            - string
+            - "null"
+          format: uuid
+          description: Set to null to remove the avatar.
+
+    FollowStateResponse:
+      type: object
+      required: [following]
+      properties:
+        following:
+          type: boolean
+          description: Current follow state after the operation.
+
+    UserListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublicUserResponse"
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
+
+    # ── Post DTOs ───────────────────────────────────────────
+    PostResponse:
+      type: object
+      required: [id, authorId, body, likeCount, commentCount, shareCount, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        authorId:
+          type: string
+          format: uuid
+        author:
+          $ref: "#/components/schemas/PublicUserResponse"
+        body:
+          type: string
+        assets:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssetResponse"
+        likeCount:
+          type: integer
+        commentCount:
+          type: integer
+        shareCount:
+          type: integer
+        liked:
+          type:
+            - boolean
+            - "null"
+          description: Whether the authenticated user has liked this post. Null for anonymous.
+        createdAt:
+          type: string
+          format: date-time
+
+    CreatePostRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        assetIds:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+            format: uuid
+
+    UpdatePostRequest:
+      type: object
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 2000
+
+    PostListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PostResponse"
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
+
+    # ── Interaction DTOs ────────────────────────────────────
+    LikeStateResponse:
+      type: object
+      required: [liked]
+      properties:
+        liked:
+          type: boolean
+          description: Current like state after the operation.
+
+    CommentResponse:
+      type: object
+      required: [id, postId, authorId, body, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        postId:
+          type: string
+          format: uuid
+        authorId:
+          type: string
+          format: uuid
+        author:
+          $ref: "#/components/schemas/PublicUserResponse"
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateCommentRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    CommentListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommentResponse"
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
+
+    ShareResponse:
+      type: object
+      required: [id, userId, postId, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        postId:
+          type: string
+          format: uuid
+        quote:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateShareRequest:
+      type: object
+      properties:
+        quote:
+          type:
+            - string
+            - "null"
+          maxLength: 500
+
+    # ── Asset DTOs ──────────────────────────────────────────
+    CreateAssetRequest:
+      type: object
+      required: [mimeType, sizeBytes]
+      properties:
+        mimeType:
+          type: string
+          enum:
+            - image/jpeg
+            - image/png
+            - image/webp
+        sizeBytes:
+          type: integer
+          minimum: 1
+          maximum: 5242880
+          description: File size in bytes. Maximum 5 MB (5 242 880 bytes).
+
+    CreateAssetResponse:
+      type: object
+      required: [assetId, presignedPutUrl]
+      properties:
+        assetId:
+          type: string
+          format: uuid
+        presignedPutUrl:
+          type: string
+          format: uri
+          description: Upload the file via HTTP PUT to this URL.
+
+    AssetResponse:
+      type: object
+      required: [id, url, mimeType, sizeBytes, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+        mimeType:
+          type: string
+        sizeBytes:
+          type: integer
+        status:
+          type: string
+          enum: [pending, ready]
+
+    CompleteAssetResponse:
+      type: object
+      required: [assetId, url]
+      properties:
+        assetId:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+
+    # ── Search DTOs ─────────────────────────────────────────
+    SearchResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            oneOf:
+              - $ref: "#/components/schemas/PublicUserResponse"
+              - $ref: "#/components/schemas/PostResponse"
+              - $ref: "#/components/schemas/CommentResponse"
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
+
+  # ── Reusable responses ─────────────────────────────────────
+  responses:
+    BadRequest:
+      description: Bad request — malformed JSON or missing required field.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "https://api.spill.social/problems/bad-request"
+            title: "Bad Request"
+            status: 400
+            detail: "Request body is not valid JSON."
+            requestId: "req_abc123"
+
+    Unauthorized:
+      description: Missing or invalid authentication token.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "https://api.spill.social/problems/unauthorized"
+            title: "Unauthorized"
+            status: 401
+            detail: "Bearer token is missing or expired."
+            requestId: "req_abc123"
+
+    Forbidden:
+      description: Authenticated but lacking permission.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "https://api.spill.social/problems/forbidden"
+            title: "Forbidden"
+            status: 403
+            detail: "You do not have permission to perform this action."
+            requestId: "req_abc123"
+
+    NotFound:
+      description: Resource not found.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "https://api.spill.social/problems/not-found"
+            title: "Not Found"
+            status: 404
+            detail: "The requested resource was not found."
+            requestId: "req_abc123"
+
+    Conflict:
+      description: Conflict — resource already exists.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "https://api.spill.social/problems/conflict"
+            title: "Conflict"
+            status: 409
+            detail: "Username is already taken."
+            requestId: "req_abc123"
+
+    PayloadTooLarge:
+      description: Request body exceeds the allowed limit.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "https://api.spill.social/problems/payload-too-large"
+            title: "Payload Too Large"
+            status: 413
+            detail: "Asset size must not exceed 5 242 880 bytes (5 MB)."
+            requestId: "req_abc123"
+
+    UnprocessableEntity:
+      description: Validation error — request was well-formed but semantically invalid.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "https://api.spill.social/problems/validation-error"
+            title: "Unprocessable Entity"
+            status: 422
+            detail: "Field 'body' must be between 1 and 2000 characters."
+            requestId: "req_abc123"
+
+    TooManyRequests:
+      description: Rate limit exceeded.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "https://api.spill.social/problems/rate-limit-exceeded"
+            title: "Too Many Requests"
+            status: 429
+            detail: "Rate limit exceeded. Try again later."
+            requestId: "req_abc123"
+
+    InternalServerError:
+      description: Unexpected server error.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "https://api.spill.social/problems/internal-error"
+            title: "Internal Server Error"
+            status: 500
+            detail: "An unexpected error occurred."
+            requestId: "req_abc123"
+
+# ─────────────────────────────────────────────────────────────
+# Paths
+# ─────────────────────────────────────────────────────────────
+paths:
+
+  # ═══════════════════════════════════════════════════════════
+  # AUTH
+  # ═══════════════════════════════════════════════════════════
+
+  /auth/request-code:
+    post:
+      operationId: requestCode
+      summary: Request a one-time login code
+      description: |
+        Sends a 6-digit OTP to the given email address.
+        Always returns 202 to prevent email enumeration.
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestCodeRequest"
+      responses:
+        "202":
+          description: Accepted — code sent (or silently dropped if on cooldown).
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /auth/verify:
+    post:
+      operationId: verifyCode
+      summary: Verify the email OTP
+      description: |
+        Validates the 6-digit code. Returns tokens for existing users,
+        or a short-lived `signupToken` for new users who must call `/auth/signup`.
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyCodeRequest"
+      responses:
+        "200":
+          description: Code verified.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerifyCodeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /auth/signup:
+    post:
+      operationId: signup
+      summary: Complete registration for a new user
+      description: |
+        Requires a valid `signupToken` in the Authorization header (obtained from `/auth/verify`).
+        Creates the user account and returns session tokens.
+      tags: [Auth]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupRequest"
+      responses:
+        "201":
+          description: User created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignupResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /auth/refresh:
+    post:
+      operationId: refreshTokens
+      summary: Rotate tokens
+      description: |
+        Accepts a valid refresh token and returns a new access/refresh token pair.
+        The old refresh token is revoked (rotation).
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: Tokens rotated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: Revoke the refresh token
+      description: Revokes the supplied refresh token, ending the session.
+      tags: [Auth]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogoutRequest"
+      responses:
+        "204":
+          description: Logged out.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  # ═══════════════════════════════════════════════════════════
+  # USERS
+  # ═══════════════════════════════════════════════════════════
+
+  /users/{username}:
+    get:
+      operationId: getUserByUsername
+      summary: Get a public user profile
+      tags: [Users]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/UsernameParam"
+      responses:
+        "200":
+          description: Public profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicUserResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /me:
+    get:
+      operationId: getMe
+      summary: Get the authenticated user's full profile
+      description: Returns private fields (email, birthdate) that public profiles omit.
+      tags: [Users]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Private profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrivateUserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    patch:
+      operationId: updateMe
+      summary: Update the authenticated user's profile
+      tags: [Users]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMeRequest"
+      responses:
+        "200":
+          description: Updated profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrivateUserResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /users/{id}/follow:
+    put:
+      operationId: followUser
+      summary: Follow a user
+      description: |
+        Idempotent: returns 200 with `{"following": true}` whether the follow
+        was newly created or already existed.
+      tags: [Users]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserIdParam"
+      responses:
+        "200":
+          description: Current follow state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FollowStateResponse"
+              example:
+                following: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: Cannot follow yourself.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      operationId: unfollowUser
+      summary: Unfollow a user
+      description: |
+        Idempotent: returns 200 with `{"following": false}` whether the follow
+        was removed or did not exist.
+      tags: [Users]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserIdParam"
+      responses:
+        "200":
+          description: Current follow state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FollowStateResponse"
+              example:
+                following: false
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /users/{id}/followers:
+    get:
+      operationId: listFollowers
+      summary: List a user's followers
+      tags: [Users]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/UserIdParam"
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated list of followers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /users/{id}/following:
+    get:
+      operationId: listFollowing
+      summary: List users this user follows
+      tags: [Users]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/UserIdParam"
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated list of followed users.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  # ═══════════════════════════════════════════════════════════
+  # POSTS
+  # ═══════════════════════════════════════════════════════════
+
+  /posts:
+    post:
+      operationId: createPost
+      summary: Create a new post
+      tags: [Posts]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePostRequest"
+      responses:
+        "201":
+          description: Post created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /posts/{id}:
+    get:
+      operationId: getPost
+      summary: Get a single post
+      tags: [Posts]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/PostIdParam"
+      responses:
+        "200":
+          description: The post.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    patch:
+      operationId: updatePost
+      summary: Edit a post
+      description: Only the post author (or an admin) may edit.
+      tags: [Posts]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PostIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePostRequest"
+      responses:
+        "200":
+          description: Post updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      operationId: deletePost
+      summary: Soft-delete a post
+      description: Only the post author (or an admin) may delete.
+      tags: [Posts]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PostIdParam"
+      responses:
+        "204":
+          description: Post deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /feed:
+    get:
+      operationId: getFeed
+      summary: Get the authenticated user's home feed
+      description: Posts from followed users, keyset-paginated by (createdAt, id).
+      tags: [Feed]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated feed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /users/{id}/posts:
+    get:
+      operationId: listUserPosts
+      summary: List posts by a specific user
+      tags: [Posts]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/UserIdParam"
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated posts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  # ═══════════════════════════════════════════════════════════
+  # INTERACTIONS
+  # ═══════════════════════════════════════════════════════════
+
+  /posts/{id}/like:
+    put:
+      operationId: likePost
+      summary: Like a post
+      description: |
+        Idempotent: returns 200 with `{"liked": true}` whether the like
+        was newly created or already existed.
+      tags: [Interactions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PostIdParam"
+      responses:
+        "200":
+          description: Current like state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LikeStateResponse"
+              example:
+                liked: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      operationId: unlikePost
+      summary: Unlike a post
+      tags: [Interactions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PostIdParam"
+      responses:
+        "200":
+          description: Current like state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LikeStateResponse"
+              example:
+                liked: false
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /posts/{id}/share:
+    post:
+      operationId: sharePost
+      summary: Share a post (optional quote)
+      tags: [Interactions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PostIdParam"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateShareRequest"
+      responses:
+        "201":
+          description: Share created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /posts/{id}/comments:
+    get:
+      operationId: listComments
+      summary: List comments on a post
+      tags: [Interactions]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/PostIdParam"
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated comments.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommentListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    post:
+      operationId: createComment
+      summary: Add a comment to a post
+      tags: [Interactions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PostIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCommentRequest"
+      responses:
+        "201":
+          description: Comment created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommentResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /comments/{id}:
+    delete:
+      operationId: deleteComment
+      summary: Soft-delete a comment
+      description: Only the comment author (or an admin) may delete.
+      tags: [Interactions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CommentIdParam"
+      responses:
+        "204":
+          description: Comment deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  # ═══════════════════════════════════════════════════════════
+  # ASSETS
+  # ═══════════════════════════════════════════════════════════
+
+  /assets:
+    post:
+      operationId: createAsset
+      summary: Request a presigned upload URL
+      description: |
+        Validates the MIME type and size, creates a pending asset row,
+        and returns a presigned PUT URL for the client to upload directly
+        to object storage.
+      tags: [Assets]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAssetRequest"
+      responses:
+        "201":
+          description: Asset record created; use the presigned URL to upload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateAssetResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /assets/{id}/complete:
+    post:
+      operationId: completeAsset
+      summary: Mark an asset upload as complete
+      description: |
+        The server verifies the object exists in storage (HEAD) and transitions
+        the asset status from `pending` to `ready`.
+      tags: [Assets]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AssetIdParam"
+      responses:
+        "200":
+          description: Asset is ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompleteAssetResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Asset is already marked as ready.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  # ═══════════════════════════════════════════════════════════
+  # SEARCH
+  # ═══════════════════════════════════════════════════════════
+
+  /search:
+    get:
+      operationId: search
+      summary: Full-text search across users, posts, or comments
+      tags: [Search]
+      security: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search query string.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+        - name: type
+          in: query
+          required: true
+          description: Entity type to search.
+          schema:
+            type: string
+            enum: [users, posts, comments]
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Search results.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"

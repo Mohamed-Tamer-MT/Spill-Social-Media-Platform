@@ -1,0 +1,13 @@
+sequenceDiagram
+    participant C as Client
+    participant API as Interaction Service
+    participant DB as Postgres
+
+    C->>API: PUT /posts/42/like
+    API->>DB: BEGIN
+    API->>DB: INSERT INTO likes (user_id, post_id) ON CONFLICT DO NOTHING
+    alt row inserted
+        API->>DB: UPDATE posts SET like_count = like_count + 1 WHERE id = 42
+    end
+    API->>DB: COMMIT
+    API-->>C: 200 {liked: true}

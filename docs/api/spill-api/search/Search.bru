@@ -1,0 +1,14 @@
+meta {
+  name: Search
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/search?q=hello&type=posts
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}

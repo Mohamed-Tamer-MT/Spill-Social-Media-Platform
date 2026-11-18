@@ -1,0 +1,28 @@
+meta {
+  name: Create Post
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/posts
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "body": "Hello from Bruno! This is my first post."
+  }
+}
+
+script:post-response {
+  if (res.status === 201) {
+    var body = res.getBody();
+    bru.setVar("postId", body.id);
+  }
+}

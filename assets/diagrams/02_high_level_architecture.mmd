@@ -1,0 +1,28 @@
+flowchart TB
+    Client["Web Client"]
+
+    subgraph GW["API Gateway Layer (middleware chain)"]
+        direction LR
+        L["Recover + Logger"] --> AU["Auth Middleware (JWT)"] --> R["Router"]
+    end
+
+    subgraph APP["Go Application (MVC)"]
+        direction TB
+        C["Controllers"]
+        V["Views (JSON DTOs)"]
+        S["Services (business rules)"]
+        M["Models / Repositories"]
+        C --> S --> M
+        C --> V
+    end
+
+    PG[("PostgreSQL<br/>data + search indexes")]
+    OBJ[("Object Storage<br/>MinIO / S3 / disk")]
+    MAIL["Email Provider (SMTP)"]
+
+    Client --> GW
+    R --> C
+    M --> PG
+    S --> OBJ
+    S --> MAIL
+    Client -. "direct upload / download via presigned URL" .-> OBJ

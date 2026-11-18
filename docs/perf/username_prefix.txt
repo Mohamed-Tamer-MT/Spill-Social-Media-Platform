@@ -1,0 +1,21 @@
+Limit  (cost=9.52..9.52 rows=1 width=120) (actual time=0.017..0.018 rows=5 loops=1)
+  Output: id, username, email, display_name, created_at
+  Buffers: shared hit=2
+  ->  Sort  (cost=9.52..9.52 rows=1 width=120) (actual time=0.016..0.017 rows=5 loops=1)
+        Output: id, username, email, display_name, created_at
+        Sort Key: users.created_at DESC
+        Sort Method: quicksort  Memory: 25kB
+        Buffers: shared hit=2
+        ->  Bitmap Heap Scan on public.users  (cost=4.17..9.51 rows=1 width=120) (actual time=0.011..0.012 rows=5 loops=1)
+              Output: id, username, email, display_name, created_at
+              Filter: ((users.username)::text ~~ 'perf_auth%'::text)
+              Rows Removed by Filter: 1
+              Heap Blocks: exact=1
+              Buffers: shared hit=2
+              ->  Bitmap Index Scan on idx_users_username_prefix  (cost=0.00..4.17 rows=2 width=0) (actual time=0.002..0.002 rows=6 loops=1)
+                    Index Cond: (((users.username)::text ~>=~ 'perf'::text) AND ((users.username)::text ~<~ 'perg'::text))
+                    Buffers: shared hit=1
+Planning:
+  Buffers: shared hit=37
+Planning Time: 0.107 ms
+Execution Time: 0.028 ms

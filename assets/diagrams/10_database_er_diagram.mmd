@@ -1,0 +1,97 @@
+erDiagram
+    USERS ||--o{ POSTS : writes
+    USERS ||--o{ COMMENTS : writes
+    USERS ||--o{ LIKES : gives
+    USERS ||--o{ SHARES : makes
+    USERS ||--o{ FOLLOWS : "is follower"
+    USERS ||--o{ FOLLOWS : "is followed"
+    USERS ||--o{ ASSETS : owns
+    USERS ||--o{ REFRESH_TOKENS : has
+    ASSETS |o--o| USERS : "avatar of"
+    POSTS ||--o{ COMMENTS : has
+    POSTS ||--o{ LIKES : receives
+    POSTS ||--o{ SHARES : "shared in"
+    POSTS ||--o{ POST_ASSETS : includes
+    ASSETS ||--o{ POST_ASSETS : "attached via"
+
+    USERS {
+        uuid id PK
+        citext username UK
+        citext email UK
+        text display_name
+        date birthdate
+        uuid avatar_asset_id FK
+        text role "user | admin"
+        int follower_count
+        int following_count
+        tsvector search_vector "generated"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    LOGIN_CODES {
+        uuid id PK
+        citext email
+        text code_hash
+        int attempts
+        timestamptz expires_at
+        timestamptz consumed_at
+    }
+    REFRESH_TOKENS {
+        uuid id PK
+        uuid user_id FK
+        text token_hash UK
+        timestamptz expires_at
+        timestamptz revoked_at
+        timestamptz created_at
+    }
+    ASSETS {
+        uuid id PK
+        uuid owner_id FK
+        text storage_key UK
+        text mime_type
+        bigint size_bytes
+        text status "pending | ready"
+        timestamptz created_at
+    }
+    POSTS {
+        uuid id PK
+        uuid author_id FK
+        text body
+        int like_count
+        int comment_count
+        int share_count
+        tsvector search_vector "generated"
+        timestamptz created_at
+        timestamptz deleted_at "soft delete"
+    }
+    POST_ASSETS {
+        uuid post_id PK, FK
+        uuid asset_id PK, FK
+        int position
+    }
+    COMMENTS {
+        uuid id PK
+        uuid post_id FK
+        uuid author_id FK
+        text body
+        tsvector search_vector "generated"
+        timestamptz created_at
+        timestamptz deleted_at
+    }
+    LIKES {
+        uuid user_id PK, FK
+        uuid post_id PK, FK
+        timestamptz created_at
+    }
+    SHARES {
+        uuid id PK
+        uuid user_id FK
+        uuid post_id FK
+        text quote "optional"
+        timestamptz created_at
+    }
+    FOLLOWS {
+        uuid follower_id PK, FK
+        uuid followee_id PK, FK
+        timestamptz created_at
+    }

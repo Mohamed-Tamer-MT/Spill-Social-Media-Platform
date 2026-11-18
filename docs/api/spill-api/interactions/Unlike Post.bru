@@ -1,0 +1,14 @@
+meta {
+  name: Unlike Post
+  type: http
+  seq: 2
+}
+
+delete {
+  url: {{baseUrl}}/posts/{{postId}}/like
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}

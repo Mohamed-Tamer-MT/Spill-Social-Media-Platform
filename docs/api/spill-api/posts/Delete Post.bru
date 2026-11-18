@@ -1,0 +1,14 @@
+meta {
+  name: Delete Post
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/posts/{{postId}}
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}

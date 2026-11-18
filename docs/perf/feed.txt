@@ -1,0 +1,41 @@
+Limit  (cost=25.78..25.78 rows=1 width=188) (actual time=0.830..0.833 rows=20 loops=1)
+  Output: p.id, p.author_id, p.body, p.like_count, p.comment_count, p.share_count, p.created_at, p.edited_at, u.username, u.display_name, u.role
+  Buffers: shared hit=1032
+  ->  Sort  (cost=25.78..25.78 rows=1 width=188) (actual time=0.829..0.831 rows=20 loops=1)
+        Output: p.id, p.author_id, p.body, p.like_count, p.comment_count, p.share_count, p.created_at, p.edited_at, u.username, u.display_name, u.role
+        Sort Key: p.created_at DESC, p.id DESC
+        Sort Method: top-N heapsort  Memory: 30kB
+        Buffers: shared hit=1032
+        ->  Nested Loop  (cost=10.57..25.77 rows=1 width=188) (actual time=0.248..0.679 rows=500 loops=1)
+              Output: p.id, p.author_id, p.body, p.like_count, p.comment_count, p.share_count, p.created_at, p.edited_at, u.username, u.display_name, u.role
+              Inner Unique: true
+              Join Filter: (f.followee_id = p.author_id)
+              Buffers: shared hit=1026
+              ->  Hash Join  (cost=10.42..25.12 rows=2 width=204) (actual time=0.224..0.286 rows=500 loops=1)
+                    Output: p.id, p.author_id, p.body, p.like_count, p.comment_count, p.share_count, p.created_at, p.edited_at, u.username, u.display_name, u.role, u.id
+                    Hash Cond: (u.id = p.author_id)
+                    Buffers: shared hit=26
+                    ->  Seq Scan on public.users u  (cost=0.00..13.40 rows=340 width=112) (actual time=0.003..0.003 rows=6 loops=1)
+                          Output: u.id, u.username, u.email, u.display_name, u.birthdate, u.avatar_asset_id, u.role, u.follower_count, u.following_count, u.search_vector, u.created_at
+                          Buffers: shared hit=1
+                    ->  Hash  (cost=10.40..10.40 rows=2 width=92) (actual time=0.212..0.213 rows=500 loops=1)
+                          Output: p.id, p.author_id, p.body, p.like_count, p.comment_count, p.share_count, p.created_at, p.edited_at
+                          Buckets: 1024  Batches: 1  Memory Usage: 90kB
+                          Buffers: shared hit=25
+                          ->  Bitmap Heap Scan on public.posts p  (cost=4.31..10.40 rows=2 width=92) (actual time=0.023..0.106 rows=500 loops=1)
+                                Output: p.id, p.author_id, p.body, p.like_count, p.comment_count, p.share_count, p.created_at, p.edited_at
+                                Recheck Cond: ((ROW(p.created_at, p.id) < ROW('2026-11-18 18:19:59.339353+00'::timestamp with time zone, '5b1e196c-ae72-4804-94d5-0c0faccbed87'::uuid)) AND (p.deleted_at IS NULL))
+                                Heap Blocks: exact=19
+                                Buffers: shared hit=25
+                                ->  Bitmap Index Scan on idx_posts_author_timeline  (cost=0.00..4.31 rows=2 width=0) (actual time=0.017..0.017 rows=500 loops=1)
+                                      Index Cond: (ROW(p.created_at, p.id) < ROW('2026-11-18 18:19:59.339353+00'::timestamp with time zone, '5b1e196c-ae72-4804-94d5-0c0faccbed87'::uuid))
+                                      Buffers: shared hit=6
+              ->  Index Only Scan using follows_pkey on public.follows f  (cost=0.15..0.31 rows=1 width=16) (actual time=0.001..0.001 rows=1 loops=500)
+                    Output: f.follower_id, f.followee_id
+                    Index Cond: ((f.follower_id = 'beceb90e-a9af-4553-9769-c38b6843fb48'::uuid) AND (f.followee_id = u.id))
+                    Heap Fetches: 500
+                    Buffers: shared hit=1000
+Planning:
+  Buffers: shared hit=85
+Planning Time: 0.343 ms
+Execution Time: 0.878 ms

@@ -1,0 +1,32 @@
+meta {
+  name: Signup
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/auth/signup
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{signupToken}}
+}
+
+body:json {
+  {
+    "username": "new_user",
+    "displayName": "New User",
+    "birthdate": "2000-01-15"
+  }
+}
+
+script:post-response {
+  if (res.status === 201) {
+    var body = res.getBody();
+    bru.setVar("accessToken", body.accessToken);
+    bru.setVar("refreshToken", body.refreshToken);
+    bru.setVar("userId", body.user.id);
+  }
+}

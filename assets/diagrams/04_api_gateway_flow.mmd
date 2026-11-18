@@ -1,0 +1,13 @@
+flowchart LR
+    A[Incoming request] --> B[Recover]
+    B --> C[Logger]
+    C --> D{"Bearer token present?"}
+    D -- No --> E["anonymous context"]
+    D -- Yes --> F{"JWT valid?"}
+    F -- No --> G["401 Unauthorized"]
+    F -- Yes --> H["context: userID, role"]
+    E --> I[Router]
+    H --> I
+    I --> J{"Route needs auth?"}
+    J -- "Yes and anonymous" --> G
+    J -- Otherwise --> K[Controller]

@@ -1,0 +1,12 @@
+sequenceDiagram
+    participant C as Client
+    participant API as Post Controller/Service
+    participant DB as Postgres
+
+    C->>API: POST /posts {body, assetIds[]}
+    API->>DB: BEGIN
+    API->>DB: INSERT posts
+    API->>DB: INSERT post_assets (each asset must be owned + ready)
+    API->>DB: COMMIT
+    Note over DB: search_vector generated automatically
+    API-->>C: 201 Created {post}

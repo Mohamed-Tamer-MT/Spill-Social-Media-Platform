@@ -1,0 +1,7 @@
+flowchart LR
+    I["INSERT / UPDATE row"] --> TV["Generated column<br/>search_vector = to_tsvector(...)"]
+    TV --> GIN[("GIN inverted index<br/>token → row ids")]
+    Q["GET /search?q=foo&type=posts"] --> PQ["websearch_to_tsquery(q)"]
+    PQ --> GIN
+    GIN --> RANK["ts_rank + ORDER BY"]
+    RANK --> RES[Results]

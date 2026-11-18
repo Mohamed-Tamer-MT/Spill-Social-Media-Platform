@@ -1,0 +1,172 @@
+================================================================================
+DATABASE SCHEMA & SECURITY VERIFICATION REPORT
+Date: 2026-11-18
+Target: Supabase PostgreSQL (AWS eu-west-1)
+================================================================================
+
+--------------------------------------------------------------------------------
+1. TABLES VERIFICATION (information_schema.tables)
+Expectation: 11 tables in public schema (10 domain tables + schema_migrations)
+--------------------------------------------------------------------------------
+ table_schema |    table_name     | table_type 
+--------------+-------------------+------------
+ public       | assets            | BASE TABLE
+ public       | comments          | BASE TABLE
+ public       | follows           | BASE TABLE
+ public       | likes             | BASE TABLE
+ public       | login_codes       | BASE TABLE
+ public       | post_assets       | BASE TABLE
+ public       | posts             | BASE TABLE
+ public       | refresh_tokens    | BASE TABLE
+ public       | schema_migrations | BASE TABLE
+ public       | shares            | BASE TABLE
+ public       | users             | BASE TABLE
+(11 rows)
+
+
+--------------------------------------------------------------------------------
+2. ROW LEVEL SECURITY (RLS) STATUS (pg_tables)
+Expectation: rowsecurity = true on EVERY public table
+--------------------------------------------------------------------------------
+ schemaname |     tablename     | rls_enabled 
+------------+-------------------+-------------
+ public     | assets            | t
+ public     | comments          | t
+ public     | follows           | t
+ public     | likes             | t
+ public     | login_codes       | t
+ public     | post_assets       | t
+ public     | posts             | t
+ public     | refresh_tokens    | t
+ public     | schema_migrations | t
+ public     | shares            | t
+ public     | users             | t
+(11 rows)
+
+
+--------------------------------------------------------------------------------
+3. RLS POLICIES (pg_policies)
+Expectation: api_app_full_access policy on domain tables, no anon/authenticated
+--------------------------------------------------------------------------------
+   tablename    |     policyname      | permissive |   roles   | cmd | qual 
+----------------+---------------------+------------+-----------+-----+------
+ assets         | api_app_full_access | PERMISSIVE | {api_app} | ALL | true
+ comments       | api_app_full_access | PERMISSIVE | {api_app} | ALL | true
+ follows        | api_app_full_access | PERMISSIVE | {api_app} | ALL | true
+ likes          | api_app_full_access | PERMISSIVE | {api_app} | ALL | true
+ login_codes    | api_app_full_access | PERMISSIVE | {api_app} | ALL | true
+ post_assets    | api_app_full_access | PERMISSIVE | {api_app} | ALL | true
+ posts          | api_app_full_access | PERMISSIVE | {api_app} | ALL | true
+ refresh_tokens | api_app_full_access | PERMISSIVE | {api_app} | ALL | true
+ shares         | api_app_full_access | PERMISSIVE | {api_app} | ALL | true
+ users          | api_app_full_access | PERMISSIVE | {api_app} | ALL | true
+(10 rows)
+
+
+--------------------------------------------------------------------------------
+4. TRIGGERS VERIFICATION (pg_trigger & pg_proc)
+Triggers present in public schema:
+- Counters: trg_likes_counter, trg_shares_counter, trg_comments_counter_row, trg_follows_counter
+- Soft delete trigger: trg_comments_counter_softdelete
+- Asset guards: trg_post_assets_guard, trg_users_avatar_guard
+--------------------------------------------------------------------------------
+ table_name  |          trigger_name           |     function_name     |                                                                                            trigger_definition                                                                                            
+-------------+---------------------------------+-----------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ comments    | trg_comments_counter_row        | fn_comments_counter   | CREATE TRIGGER trg_comments_counter_row AFTER INSERT OR DELETE ON public.comments FOR EACH ROW EXECUTE FUNCTION fn_comments_counter()
+ comments    | trg_comments_counter_softdelete | fn_comments_counter   | CREATE TRIGGER trg_comments_counter_softdelete AFTER UPDATE OF deleted_at ON public.comments FOR EACH ROW WHEN ((old.deleted_at IS DISTINCT FROM new.deleted_at)) EXECUTE FUNCTION fn_comments_counter()
+ follows     | trg_follows_counter             | fn_follows_counter    | CREATE TRIGGER trg_follows_counter AFTER INSERT OR DELETE ON public.follows FOR EACH ROW EXECUTE FUNCTION fn_follows_counter()
+ likes       | trg_likes_counter               | fn_likes_counter      | CREATE TRIGGER trg_likes_counter AFTER INSERT OR DELETE ON public.likes FOR EACH ROW EXECUTE FUNCTION fn_likes_counter()
+ post_assets | trg_post_assets_guard           | fn_post_assets_guard  | CREATE TRIGGER trg_post_assets_guard BEFORE INSERT ON public.post_assets FOR EACH ROW EXECUTE FUNCTION fn_post_assets_guard()
+ shares      | trg_shares_counter              | fn_shares_counter     | CREATE TRIGGER trg_shares_counter AFTER INSERT OR DELETE ON public.shares FOR EACH ROW EXECUTE FUNCTION fn_shares_counter()
+ users       | trg_users_avatar_guard          | fn_users_avatar_guard | CREATE TRIGGER trg_users_avatar_guard BEFORE INSERT OR UPDATE OF avatar_asset_id ON public.users FOR EACH ROW EXECUTE FUNCTION fn_users_avatar_guard()
+(7 rows)
+
+
+--------------------------------------------------------------------------------
+5. INDEXES VERIFICATION (pg_indexes)
+--------------------------------------------------------------------------------
+     tablename     |           indexname           |                                                              indexdef                                                               
+-------------------+-------------------------------+-------------------------------------------------------------------------------------------------------------------------------------
+ assets            | assets_pkey                   | CREATE UNIQUE INDEX assets_pkey ON public.assets USING btree (id)
+ assets            | assets_storage_key_key        | CREATE UNIQUE INDEX assets_storage_key_key ON public.assets USING btree (storage_key)
+ assets            | idx_assets_owner              | CREATE INDEX idx_assets_owner ON public.assets USING btree (owner_id, created_at DESC)
+ assets            | idx_assets_pending_expiry     | CREATE INDEX idx_assets_pending_expiry ON public.assets USING btree (upload_expires_at) WHERE (status = 'pending'::text)
+ comments          | comments_pkey                 | CREATE UNIQUE INDEX comments_pkey ON public.comments USING btree (id)
+ comments          | idx_comments_author           | CREATE INDEX idx_comments_author ON public.comments USING btree (author_id)
+ comments          | idx_comments_post_timeline    | CREATE INDEX idx_comments_post_timeline ON public.comments USING btree (post_id, created_at, id) WHERE (deleted_at IS NULL)
+ comments          | idx_comments_search           | CREATE INDEX idx_comments_search ON public.comments USING gin (search_vector)
+ follows           | follows_pkey                  | CREATE UNIQUE INDEX follows_pkey ON public.follows USING btree (follower_id, followee_id)
+ follows           | idx_follows_followee          | CREATE INDEX idx_follows_followee ON public.follows USING btree (followee_id)
+ likes             | idx_likes_post                | CREATE INDEX idx_likes_post ON public.likes USING btree (post_id)
+ likes             | likes_pkey                    | CREATE UNIQUE INDEX likes_pkey ON public.likes USING btree (user_id, post_id)
+ login_codes       | idx_login_codes_active        | CREATE INDEX idx_login_codes_active ON public.login_codes USING btree (email) WHERE (consumed_at IS NULL)
+ login_codes       | idx_login_codes_email_recent  | CREATE INDEX idx_login_codes_email_recent ON public.login_codes USING btree (email, created_at DESC)
+ login_codes       | login_codes_pkey              | CREATE UNIQUE INDEX login_codes_pkey ON public.login_codes USING btree (id)
+ post_assets       | post_assets_asset_unique      | CREATE UNIQUE INDEX post_assets_asset_unique ON public.post_assets USING btree (asset_id)
+ post_assets       | post_assets_pkey              | CREATE UNIQUE INDEX post_assets_pkey ON public.post_assets USING btree (post_id, "position")
+ posts             | idx_posts_author_timeline     | CREATE INDEX idx_posts_author_timeline ON public.posts USING btree (author_id, created_at DESC, id DESC) WHERE (deleted_at IS NULL)
+ posts             | idx_posts_search              | CREATE INDEX idx_posts_search ON public.posts USING gin (search_vector)
+ posts             | posts_pkey                    | CREATE UNIQUE INDEX posts_pkey ON public.posts USING btree (id)
+ refresh_tokens    | idx_refresh_tokens_user       | CREATE INDEX idx_refresh_tokens_user ON public.refresh_tokens USING btree (user_id)
+ refresh_tokens    | refresh_tokens_pkey           | CREATE UNIQUE INDEX refresh_tokens_pkey ON public.refresh_tokens USING btree (id)
+ refresh_tokens    | refresh_tokens_token_hash_key | CREATE UNIQUE INDEX refresh_tokens_token_hash_key ON public.refresh_tokens USING btree (token_hash)
+ schema_migrations | schema_migrations_pkey        | CREATE UNIQUE INDEX schema_migrations_pkey ON public.schema_migrations USING btree (version)
+ shares            | idx_shares_post               | CREATE INDEX idx_shares_post ON public.shares USING btree (post_id)
+ shares            | shares_pkey                   | CREATE UNIQUE INDEX shares_pkey ON public.shares USING btree (id)
+ shares            | shares_user_post_unique       | CREATE UNIQUE INDEX shares_user_post_unique ON public.shares USING btree (user_id, post_id)
+ users             | idx_users_search              | CREATE INDEX idx_users_search ON public.users USING gin (search_vector)
+ users             | idx_users_username_prefix     | CREATE INDEX idx_users_username_prefix ON public.users USING btree (((username)::text) text_pattern_ops)
+ users             | users_email_key               | CREATE UNIQUE INDEX users_email_key ON public.users USING btree (email)
+ users             | users_pkey                    | CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)
+ users             | users_username_key            | CREATE UNIQUE INDEX users_username_key ON public.users USING btree (username)
+(32 rows)
+
+
+--------------------------------------------------------------------------------
+6. INDEX USAGE EXPLAIN PLANS
+6.1. Username Prefix Search Query:
+EXPLAIN SELECT * FROM public.users WHERE username::text LIKE 'ab%';
+--------------------------------------------------------------------------------
+SET
+                                           QUERY PLAN                                           
+------------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on users
+   Filter: ((username)::text ~~ 'ab%'::text)
+   ->  Bitmap Index Scan on idx_users_username_prefix
+         Index Cond: (((username)::text ~>=~ 'ab'::text) AND ((username)::text ~<~ 'ac'::text))
+(4 rows)
+
+
+6.2. Keyset Feed Query:
+EXPLAIN feed query using follows & posts timelines
+SET
+                                                           QUERY PLAN                                                           
+--------------------------------------------------------------------------------------------------------------------------------
+ Limit
+   ->  Sort
+         Sort Key: p.created_at DESC, p.id DESC
+         ->  Nested Loop
+               ->  Index Scan using idx_posts_author_timeline on posts p
+                     Index Cond: (ROW(created_at, id) < ROW(now(), '00000000-0000-0000-0000-000000000001'::uuid))
+               ->  Index Only Scan using follows_pkey on follows f
+                     Index Cond: ((follower_id = '00000000-0000-0000-0000-000000000001'::uuid) AND (followee_id = p.author_id))
+(8 rows)
+
+
+--------------------------------------------------------------------------------
+7. LOCKDOWN CHECK (anon role access on public.users)
+Expectation: ERROR: permission denied for table users
+--------------------------------------------------------------------------------
+STDOUT: SET
+STDERR: ERROR:  permission denied for table users
+HINT:  Grant the required privileges to the current role with: GRANT SELECT ON public.users TO anon;
+
+--------------------------------------------------------------------------------
+8. PG_CRON PURGE JOBS (cron.job)
+--------------------------------------------------------------------------------
+ jobid |  schedule  |                                  command                                   | nodename  | nodeport | database | username | active |       jobname        
+-------+------------+----------------------------------------------------------------------------+-----------+----------+----------+----------+--------+----------------------
+     1 | 17 * * * * | delete from public.login_codes where expires_at < now() - interval '1 day' | localhost |     5432 | postgres | postgres | t      | purge-login-codes
+     2 | 23 3 * * * | delete from public.refresh_tokens where expires_at < now()                 | localhost |     5432 | postgres | postgres | t      | purge-refresh-tokens
+(2 rows)
+

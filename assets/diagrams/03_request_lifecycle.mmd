@@ -1,0 +1,21 @@
+sequenceDiagram
+    participant C as Client
+    participant MW as Middleware (recover, log, auth)
+    participant CT as Controller
+    participant SV as Service
+    participant MD as Model (Repo)
+    participant DB as Postgres
+    participant VW as View (DTO)
+
+    C->>MW: GET /posts/123
+    MW->>MW: verify JWT
+    MW->>CT: request + user context
+    CT->>SV: GetPost(123)
+    SV->>MD: FindPostByID(123)
+    MD->>DB: SELECT ...
+    DB-->>MD: row
+    MD-->>SV: Post model
+    SV-->>CT: Post
+    CT->>VW: toPostResponse(Post)
+    VW-->>CT: JSON DTO
+    CT-->>C: 200 OK

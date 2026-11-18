@@ -1,0 +1,31 @@
+meta {
+  name: Create Asset
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/assets
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "mimeType": "image/jpeg",
+    "sizeBytes": 102400,
+    "kind": "post_image"
+  }
+}
+
+script:post-response {
+  if (res.status === 201) {
+    var body = res.getBody();
+    bru.setVar("assetId", body.assetId);
+    bru.setVar("presignedPutUrl", body.presignedPutUrl);
+  }
+}

@@ -1,0 +1,15 @@
+sequenceDiagram
+    participant C as Client
+    participant API as Asset Controller/Service
+    participant DB as Postgres
+    participant S as Object Storage
+
+    C->>API: POST /assets {mimeType, sizeBytes}
+    API->>API: validate (jpeg/png/webp, max 5 MB)
+    API->>DB: INSERT assets (status = pending, storage_key)
+    API-->>C: {assetId, presignedPutUrl}
+    C->>S: PUT file (presigned URL)
+    C->>API: POST /assets/{id}/complete
+    API->>S: HEAD object (verify exists + size)
+    API->>DB: UPDATE assets SET status = ready
+    API-->>C: {assetId, url}

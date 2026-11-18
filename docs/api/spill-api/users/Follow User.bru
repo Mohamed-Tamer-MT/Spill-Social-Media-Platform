@@ -1,0 +1,14 @@
+meta {
+  name: Follow User
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/users/{{userId}}/follow
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}

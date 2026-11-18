@@ -1,0 +1,14 @@
+meta {
+  name: Get Feed
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/feed
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}

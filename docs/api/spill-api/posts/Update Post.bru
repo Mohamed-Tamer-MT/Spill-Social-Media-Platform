@@ -1,0 +1,21 @@
+meta {
+  name: Update Post
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{baseUrl}}/posts/{{postId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "body": "Updated post content via Bruno."
+  }
+}

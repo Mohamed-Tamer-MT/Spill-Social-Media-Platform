@@ -1,0 +1,21 @@
+meta {
+  name: Share Post
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/posts/{{postId}}/share
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "quote": "Check this out!"
+  }
+}
