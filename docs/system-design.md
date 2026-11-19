@@ -92,7 +92,7 @@ In a JSON API, the **View** is the response DTO/serializer layer.
 /migrations                  # golang-migrate .sql files
 ```
 
-**Suggested libs:** `chi` (router), `pgx` (Postgres), `golang-jwt/jwt`, `golang-migrate`, `go-playground/validator`.
+**Suggested libs:** `gorilla/mux` (router), `pgx` (Postgres), `golang-jwt/jwt`, `golang-migrate`, `go-playground/validator`.
 
 ### Request lifecycle
 

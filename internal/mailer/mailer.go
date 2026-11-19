@@ -22,10 +22,26 @@ func NewMailer(cfg *config.Config) (Mailer, error) {
 		}
 		return NewSMTPMailer(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPFrom), nil
 	case "mailpit":
-		return NewMailpitMailer("localhost:1025", cfg.SMTPFrom), nil
+		host := cfg.SMTPHost
+		if host == "" {
+			host = "localhost"
+		}
+		port := cfg.SMTPPort
+		if port == "" {
+			port = "1025"
+		}
+		return NewMailpitMailer(fmt.Sprintf("%s:%s", host, port), cfg.SMTPFrom), nil
 	default:
 		// Default to mailpit for local development
-		return NewMailpitMailer("localhost:1025", cfg.SMTPFrom), nil
+		host := cfg.SMTPHost
+		if host == "" {
+			host = "localhost"
+		}
+		port := cfg.SMTPPort
+		if port == "" {
+			port = "1025"
+		}
+		return NewMailpitMailer(fmt.Sprintf("%s:%s", host, port), cfg.SMTPFrom), nil
 	}
 }
 

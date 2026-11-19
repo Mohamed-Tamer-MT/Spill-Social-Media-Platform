@@ -27,7 +27,11 @@ end $$;
 -- ---------------------------------------------------------------------
 -- 9. Revert storage bucket
 -- ---------------------------------------------------------------------
-delete from storage.buckets where id = 'media';
+do $$ begin
+  if exists (select 1 from pg_tables where schemaname = 'storage' and tablename = 'buckets') then
+    delete from storage.buckets where id = 'media';
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------
 -- 8. Revert triggers: asset integrity

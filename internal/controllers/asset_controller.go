@@ -7,7 +7,7 @@ import (
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/middleware"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/services"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/views"
-	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/mux"
 )
 
 type AssetController struct {
@@ -59,7 +59,7 @@ func (c *AssetController) CompleteAsset(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	assetID := chi.URLParam(r, "id")
+	assetID := mux.Vars(r)["id"]
 	if assetID == "" {
 		views.WriteProblem(w, r, http.StatusBadRequest, "Asset ID parameter is required.")
 		return

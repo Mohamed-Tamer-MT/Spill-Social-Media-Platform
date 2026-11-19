@@ -421,6 +421,43 @@ func TestRepository_UserLifecycle(t *testing.T) {
 	if err != nil || updated.DisplayName != newName {
 		t.Fatalf("UpdateUserProfile failed: %v", err)
 	}
+
+	// Create a valid avatar asset for user
+	avatarKey := fmt.Sprintf("u/%s/avatar.png", u.ID)
+	avatarAsset, err := f.repo.CreateAsset(f.ctx, uuid.New().String(), u.ID, "avatar", "media", avatarKey, "image/png", 2048)
+	if err != nil {
+		t.Fatalf("CreateAsset failed: %v", err)
+	}
+	_, err = f.repo.CompleteAsset(f.ctx, avatarAsset.ID)
+	if err != nil {
+		t.Fatalf("CompleteAsset failed: %v", err)
+	}
+
+	// Update user profile with valid ready avatar
+	updatedAvatar, err := f.repo.UpdateUserProfile(f.ctx, u.ID, nil, &avatarAsset.ID, false)
+	if err != nil || updatedAvatar.AvatarAssetID == nil || *updatedAvatar.AvatarAssetID != avatarAsset.ID {
+		t.Fatalf("UpdateUserProfile with valid avatar failed: %v", err)
+	}
+
+	// Clear avatar
+	clearedAvatar, err := f.repo.UpdateUserProfile(f.ctx, u.ID, nil, nil, true)
+	if err != nil || clearedAvatar.AvatarAssetID != nil {
+		t.Fatalf("UpdateUserProfile clear avatar failed: %v", err)
+	}
+
+	// Attempt setting another user's asset as avatar -> trigger must reject
+	otherUser := makeTestUser(t, f, "otheravatar")
+	otherKey := fmt.Sprintf("u/%s/avatar.png", otherUser.ID)
+	otherAsset, err := f.repo.CreateAsset(f.ctx, uuid.New().String(), otherUser.ID, "avatar", "media", otherKey, "image/png", 2048)
+	if err != nil {
+		t.Fatalf("CreateAsset failed: %v", err)
+	}
+	_, _ = f.repo.CompleteAsset(f.ctx, otherAsset.ID)
+
+	_, err = f.repo.UpdateUserProfile(f.ctx, u.ID, nil, &otherAsset.ID, false)
+	if err == nil || !strings.Contains(err.Error(), "trigger validation error") {
+		t.Fatalf("expected trigger validation error when using another user's asset as avatar, got: %v", err)
+	}
 }
 
 func TestRepository_FollowLifecycle(t *testing.T) {
@@ -450,6 +487,27 @@ func TestRepository_FollowLifecycle(t *testing.T) {
 	following, err := f.repo.GetFollowing(f.ctx, u1.ID, 10, nil, "")
 	if err != nil || len(following) != 1 || following[0].ID != u2.ID {
 		t.Fatalf("GetFollowing failed: %v", err)
+	}
+
+	// Test cursor pagination for followers & following
+	cursorTime := followers[0].CreatedAt
+	cursorID := followers[0].ID
+	pagedFollowers, err := f.repo.GetFollowers(f.ctx, u2.ID, 10, &cursorTime, cursorID)
+	if err != nil {
+		t.Fatalf("GetFollowers with cursor failed: %v", err)
+	}
+	if len(pagedFollowers) != 0 {
+		t.Errorf("expected 0 followers after last item cursor, got %d", len(pagedFollowers))
+	}
+
+	fCursorTime := following[0].CreatedAt
+	fCursorID := following[0].ID
+	pagedFollowing, err := f.repo.GetFollowing(f.ctx, u1.ID, 10, &fCursorTime, fCursorID)
+	if err != nil {
+		t.Fatalf("GetFollowing with cursor failed: %v", err)
+	}
+	if len(pagedFollowing) != 0 {
+		t.Errorf("expected 0 following after last item cursor, got %d", len(pagedFollowing))
 	}
 
 	// Unfollow
@@ -536,6 +594,37 @@ func TestRepository_AssetLifecycle(t *testing.T) {
 	if err := f.repo.DeleteAssets(f.ctx, []string{a.ID}); err != nil {
 		t.Fatalf("DeleteAssets failed: %v", err)
 	}
+
+	// Test GetExpiredPendingAssets
+	expiredKey := fmt.Sprintf("u/%s/expired.jpg", user.ID)
+	expiredID := uuid.New().String()
+	_, err = f.appPool.Exec(f.ctx, `
+		INSERT INTO public.assets (id, owner_id, kind, storage_bucket, storage_key, mime_type, size_bytes, status, upload_expires_at, created_at)
+		VALUES ($1, $2, 'post_image', 'media', $3, 'image/jpeg', 1000, 'pending', now() - interval '1 hour', now() - interval '2 hours');
+	`, expiredID, user.ID, expiredKey)
+	if err != nil {
+		t.Fatalf("failed to insert expired pending asset: %v", err)
+	}
+
+	expiredAssets, err := f.repo.GetExpiredPendingAssets(f.ctx)
+	if err != nil {
+		t.Fatalf("GetExpiredPendingAssets failed: %v", err)
+	}
+	foundExpired := false
+	for _, ea := range expiredAssets {
+		if ea.ID == expiredID {
+			foundExpired = true
+			break
+		}
+	}
+	if !foundExpired {
+		t.Fatalf("expected to find expired asset %s in GetExpiredPendingAssets results", expiredID)
+	}
+
+	// Clean up expired asset
+	if err := f.repo.DeleteAssets(f.ctx, []string{expiredID}); err != nil {
+		t.Fatalf("DeleteAssets on expired asset failed: %v", err)
+	}
 }
 
 func TestRepository_AuthLifecycle(t *testing.T) {
@@ -595,5 +684,24 @@ func TestRepository_AuthLifecycle(t *testing.T) {
 	// RevokeAll
 	if err := f.repo.RevokeAllUserRefreshTokens(f.ctx, u.ID); err != nil {
 		t.Fatalf("RevokeAllUserRefreshTokens failed: %v", err)
+	}
+
+	// RevokeRefreshTokenByHash
+	singleTokenHash := fmt.Sprintf("%x", sha256.Sum256([]byte("single_refresh_token")))
+	err = f.repo.CreateRefreshToken(f.ctx, u.ID, singleTokenHash, nil, time.Now().Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("CreateRefreshToken failed: %v", err)
+	}
+
+	if err := f.repo.RevokeRefreshTokenByHash(f.ctx, singleTokenHash); err != nil {
+		t.Fatalf("RevokeRefreshTokenByHash failed: %v", err)
+	}
+
+	revokedRT, err := f.repo.FindRefreshTokenByHash(f.ctx, singleTokenHash)
+	if err != nil {
+		t.Fatalf("FindRefreshTokenByHash failed: %v", err)
+	}
+	if revokedRT.RevokedAt == nil {
+		t.Fatal("expected RevokedAt to be set after RevokeRefreshTokenByHash, got nil")
 	}
 }

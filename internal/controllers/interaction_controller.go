@@ -8,7 +8,7 @@ import (
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/middleware"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/services"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/views"
-	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/mux"
 )
 
 type InteractionController struct {
@@ -31,7 +31,7 @@ func (c *InteractionController) Like(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	postID := chi.URLParam(r, "id")
+	postID := mux.Vars(r)["id"]
 	if postID == "" {
 		views.WriteProblem(w, r, http.StatusBadRequest, "Post ID parameter is required.")
 		return
@@ -54,7 +54,7 @@ func (c *InteractionController) Unlike(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	postID := chi.URLParam(r, "id")
+	postID := mux.Vars(r)["id"]
 	if postID == "" {
 		views.WriteProblem(w, r, http.StatusBadRequest, "Post ID parameter is required.")
 		return
@@ -77,7 +77,7 @@ func (c *InteractionController) Share(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	postID := chi.URLParam(r, "id")
+	postID := mux.Vars(r)["id"]
 	if postID == "" {
 		views.WriteProblem(w, r, http.StatusBadRequest, "Post ID parameter is required.")
 		return

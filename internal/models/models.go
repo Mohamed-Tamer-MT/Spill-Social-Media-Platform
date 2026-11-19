@@ -12,10 +12,11 @@ import (
 )
 
 var (
-	ErrNotFound       = errors.New("record not found")
-	ErrDuplicateKey   = errors.New("duplicate record already exists")
-	ErrUsernameTaken  = errors.New("username is already taken")
+	ErrNotFound        = errors.New("record not found")
+	ErrDuplicateKey    = errors.New("duplicate record already exists")
+	ErrUsernameTaken   = errors.New("username is already taken")
 	ErrEmailRegistered = errors.New("email is already registered")
+	ErrConflict        = errors.New("conflict: resource was concurrently modified")
 )
 
 type User struct {
@@ -120,18 +121,26 @@ LIMIT 1;`
 	return &code, nil
 }
 
-// IncrementAttempts increments the failed verification attempts counter on a login code.
+// IncrementAttempts increments the failed verification attempts counter on a login code,
+// safely capped at 10 to satisfy the database check constraint.
 func (r *Repository) IncrementAttempts(ctx context.Context, id string) error {
-	query := `UPDATE public.login_codes SET attempts = attempts + 1 WHERE id = $1;`
+	query := `UPDATE public.login_codes SET attempts = LEAST(attempts + 1, 10) WHERE id = $1;`
 	_, err := r.db.Exec(ctx, query, id)
 	return err
 }
 
 // MarkCodeConsumed marks a login code as consumed upon successful verification.
+// Uses an atomic conditional update to prevent race conditions / replay attacks.
 func (r *Repository) MarkCodeConsumed(ctx context.Context, id string) error {
-	query := `UPDATE public.login_codes SET consumed_at = now() WHERE id = $1;`
-	_, err := r.db.Exec(ctx, query, id)
-	return err
+	query := `UPDATE public.login_codes SET consumed_at = now() WHERE id = $1 AND consumed_at IS NULL;`
+	tag, err := r.db.Exec(ctx, query, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // FindUserByEmail looks up an existing user by email.
@@ -283,10 +292,14 @@ func (r *Repository) RotateRefreshToken(ctx context.Context, oldTokenID string, 
 	}
 	defer tx.Rollback(ctx)
 
-	// Revoke old token
-	revokeQuery := `UPDATE public.refresh_tokens SET revoked_at = now(), last_used_at = now() WHERE id = $1;`
-	if _, err := tx.Exec(ctx, revokeQuery, oldTokenID); err != nil {
+	// Revoke old token ensuring it has not been concurrently revoked
+	revokeQuery := `UPDATE public.refresh_tokens SET revoked_at = now(), last_used_at = now() WHERE id = $1 AND revoked_at IS NULL;`
+	tag, err := tx.Exec(ctx, revokeQuery, oldTokenID)
+	if err != nil {
 		return fmt.Errorf("failed to revoke old refresh token: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrConflict
 	}
 
 	// Insert new token

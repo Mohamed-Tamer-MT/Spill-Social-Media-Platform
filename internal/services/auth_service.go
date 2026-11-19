@@ -146,8 +146,11 @@ func (s *AuthService) VerifyCode(ctx context.Context, rawEmail string, rawCode s
 		return nil, ErrInvalidCredentials
 	}
 
-	// Mark code as consumed
+	// Mark code as consumed atomically
 	if err := s.repo.MarkCodeConsumed(ctx, activeCode.ID); err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			return nil, ErrInvalidCredentials
+		}
 		return nil, fmt.Errorf("failed to consume code: %w", err)
 	}
 
@@ -226,7 +229,7 @@ func (s *AuthService) Signup(ctx context.Context, signupToken, username, display
 	if err != nil {
 		return nil, nil, ErrInvalidBirthdate
 	}
-	if birthdate.Before(time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)) {
+	if !birthdate.After(time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)) {
 		return nil, nil, errors.New("birthdate must be after 1900-01-01")
 	}
 
@@ -326,6 +329,10 @@ func (s *AuthService) RefreshToken(ctx context.Context, rawRefreshToken, userAge
 
 	// Rotate atomically: revoke old token and insert new token
 	if err := s.repo.RotateRefreshToken(ctx, tokenRecord.ID, user.ID, newTokenHash, ua, newExpiresAt); err != nil {
+		if errors.Is(err, models.ErrConflict) {
+			_ = s.repo.RevokeAllUserRefreshTokens(ctx, user.ID)
+			return nil, ErrTokenRevoked
+		}
 		return nil, fmt.Errorf("failed to rotate refresh token: %w", err)
 	}
 

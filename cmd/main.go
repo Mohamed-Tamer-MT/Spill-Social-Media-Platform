@@ -15,12 +15,11 @@ import (
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/controllers"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/db"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/mailer"
+	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/middleware"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/models"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/routes"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/services"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/storage"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 )
 
 func main() {
@@ -63,7 +62,7 @@ func main() {
 	assetService.StartCleanupJob(ctx, 5*time.Minute)
 
 	// Initialize controllers
-	authController := controllers.NewAuthController(authService)
+	authController := controllers.NewAuthController(authService, cfg.JWTSecret)
 	userController := controllers.NewUserController(userService)
 	postController := controllers.NewPostController(postService)
 	interactionController := controllers.NewInteractionController(postService)
@@ -71,15 +70,25 @@ func main() {
 	assetController := controllers.NewAssetController(assetService)
 	searchController := controllers.NewSearchController(searchService)
 
-	// Build HTTP router
-	r := chi.NewRouter()
+	// Build HTTP router using Gorilla Mux
+	r := routes.SetupRouter(routes.RouterConfig{
+		AuthController:        authController,
+		UserController:        userController,
+		PostController:        postController,
+		InteractionController: interactionController,
+		CommentController:     commentController,
+		AssetController:       assetController,
+		SearchController:      searchController,
+		JWTSecret:             cfg.JWTSecret,
+	})
+
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"app":     "Spill Social Media Platform API",
@@ -87,9 +96,9 @@ func main() {
 			"env":     cfg.AppEnv,
 			"db_user": appPool.CurrentUser,
 		})
-	})
+	}).Methods(http.MethodGet)
 
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		pingCtx, pingCancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer pingCancel()
 
@@ -104,26 +113,13 @@ func main() {
 			"current_user":   appPool.CurrentUser,
 			"server_version": appPool.ServerVersion,
 		})
-	})
-
-	// Mount API routes
-	apiRouter := routes.SetupRouter(routes.RouterConfig{
-		AuthController:        authController,
-		UserController:        userController,
-		PostController:        postController,
-		InteractionController: interactionController,
-		CommentController:     commentController,
-		AssetController:       assetController,
-		SearchController:      searchController,
-		JWTSecret:             cfg.JWTSecret,
-	})
-	r.Mount("/", apiRouter)
+	}).Methods(http.MethodGet)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.HTTPPort,
 		Handler:      r,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		WriteTimeout: 75 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 

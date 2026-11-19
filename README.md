@@ -135,7 +135,7 @@ The complete system design document is at [`docs/system-design.md`](docs/system-
   /mailer                    # send OTP emails (SMTP / mailpit)
   /middleware                # logger, recover, auth (RequireAuth, OptionalAuth, RequireRole, MaxBytes)
   /models                    # domain structs + repository (SQL queries via pgx)
-  /routes                    # route table → controllers (chi router)
+  /routes                    # route table → controllers (gorilla/mux router)
   /services                  # business logic (auth, posts, feed, search, assets, users, comments)
   /storage                   # object storage client (presign, head, delete)
   /testhelper                # testcontainers Postgres setup

@@ -7,7 +7,7 @@ import (
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/middleware"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/services"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/views"
-	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/mux"
 )
 
 type CommentController struct {
@@ -30,7 +30,7 @@ func (c *CommentController) CreateComment(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	postID := chi.URLParam(r, "id")
+	postID := mux.Vars(r)["id"]
 	if postID == "" {
 		views.WriteProblem(w, r, http.StatusBadRequest, "Post ID parameter is required.")
 		return
@@ -53,7 +53,7 @@ func (c *CommentController) CreateComment(w http.ResponseWriter, r *http.Request
 
 // GetComments handles GET /posts/{id}/comments
 func (c *CommentController) GetComments(w http.ResponseWriter, r *http.Request) {
-	postID := chi.URLParam(r, "id")
+	postID := mux.Vars(r)["id"]
 	if postID == "" {
 		views.WriteProblem(w, r, http.StatusBadRequest, "Post ID parameter is required.")
 		return
@@ -80,7 +80,7 @@ func (c *CommentController) DeleteComment(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	commentID := chi.URLParam(r, "id")
+	commentID := mux.Vars(r)["id"]
 	if commentID == "" {
 		views.WriteProblem(w, r, http.StatusBadRequest, "Comment ID parameter is required.")
 		return

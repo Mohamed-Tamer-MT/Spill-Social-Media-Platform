@@ -7,7 +7,7 @@ import (
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/middleware"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/services"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/views"
-	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/mux"
 )
 
 type PostController struct {
@@ -52,7 +52,7 @@ func (c *PostController) CreatePost(w http.ResponseWriter, r *http.Request) {
 
 // GetPost handles GET /posts/{id}
 func (c *PostController) GetPost(w http.ResponseWriter, r *http.Request) {
-	postID := chi.URLParam(r, "id")
+	postID := mux.Vars(r)["id"]
 	if postID == "" {
 		views.WriteProblem(w, r, http.StatusBadRequest, "Post ID parameter is required.")
 		return
@@ -81,7 +81,7 @@ func (c *PostController) UpdatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	postID := chi.URLParam(r, "id")
+	postID := mux.Vars(r)["id"]
 	if postID == "" {
 		views.WriteProblem(w, r, http.StatusBadRequest, "Post ID parameter is required.")
 		return
@@ -111,7 +111,7 @@ func (c *PostController) DeletePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	postID := chi.URLParam(r, "id")
+	postID := mux.Vars(r)["id"]
 	if postID == "" {
 		views.WriteProblem(w, r, http.StatusBadRequest, "Post ID parameter is required.")
 		return
@@ -147,7 +147,7 @@ func (c *PostController) GetFeed(w http.ResponseWriter, r *http.Request) {
 
 // GetUserPosts handles GET /users/{id}/posts
 func (c *PostController) GetUserPosts(w http.ResponseWriter, r *http.Request) {
-	targetUserID := chi.URLParam(r, "id")
+	targetUserID := mux.Vars(r)["id"]
 	if targetUserID == "" {
 		views.WriteProblem(w, r, http.StatusBadRequest, "User ID parameter is required.")
 		return

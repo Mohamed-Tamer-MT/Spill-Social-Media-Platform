@@ -15,7 +15,7 @@ import (
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/models"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/services"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/testhelper"
-	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/mux"
 )
 
 func setupTestApp(t *testing.T) (http.Handler, *mailer.MockMailer) {
@@ -52,14 +52,14 @@ func setupTestApp(t *testing.T) (http.Handler, *mailer.MockMailer) {
 	repo := models.NewRepository(pool.Pool)
 	mockMailer := mailer.NewMockMailer()
 	authService := services.NewAuthService(repo, mockMailer, cfg)
-	authController := NewAuthController(authService)
+	authController := NewAuthController(authService, cfg.JWTSecret)
 
-	r := chi.NewRouter()
-	r.Post("/auth/request-code", authController.RequestCode)
-	r.Post("/auth/verify", authController.Verify)
-	r.Post("/auth/signup", authController.Signup)
-	r.Post("/auth/refresh", authController.Refresh)
-	r.Post("/auth/logout", authController.Logout)
+	r := mux.NewRouter()
+	r.HandleFunc("/auth/request-code", authController.RequestCode).Methods(http.MethodPost)
+	r.HandleFunc("/auth/verify", authController.Verify).Methods(http.MethodPost)
+	r.HandleFunc("/auth/signup", authController.Signup).Methods(http.MethodPost)
+	r.HandleFunc("/auth/refresh", authController.Refresh).Methods(http.MethodPost)
+	r.HandleFunc("/auth/logout", authController.Logout).Methods(http.MethodPost)
 
 	return r, mockMailer
 }
