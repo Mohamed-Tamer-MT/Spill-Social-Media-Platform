@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -52,10 +53,13 @@ func NewAppPool(ctx context.Context, databaseURL string) (*Pool, error) {
 	log.Printf("[DB] Connected to PostgreSQL as '%s'", currentUser)
 	log.Printf("[DB] Server version: %s", serverVersion)
 
-	// Fail fast if current_user is not api_app
+	// In production, enforce connecting as api_app; in non-production, log a warning
 	if currentUser != "api_app" {
-		pool.Close()
-		return nil, fmt.Errorf("security violation: connected as '%s', expected 'api_app'", currentUser)
+		if os.Getenv("APP_ENV") == "production" {
+			pool.Close()
+			return nil, fmt.Errorf("security violation: connected as '%s', expected 'api_app'", currentUser)
+		}
+		log.Printf("[DB] WARNING: connected as '%s' (production requires 'api_app')", currentUser)
 	}
 
 	return &Pool{

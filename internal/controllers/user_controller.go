@@ -7,7 +7,8 @@ import (
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/middleware"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/services"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/views"
-	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 )
 
 type UserController struct {
@@ -20,7 +21,7 @@ func NewUserController(userService *services.UserService) *UserController {
 
 // GetProfile handles GET /users/{username}
 func (c *UserController) GetProfile(w http.ResponseWriter, r *http.Request) {
-	username := chi.URLParam(r, "username")
+	username := mux.Vars(r)["username"]
 	if username == "" {
 		views.WriteProblem(w, r, http.StatusBadRequest, "Username parameter is required.")
 		return
@@ -77,15 +78,30 @@ func (c *UserController) UpdateMe(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		displayName = &dn
+	} else if val, ok := raw["display_name"]; ok {
+		var dn string
+		if err := json.Unmarshal(val, &dn); err != nil {
+			views.WriteProblem(w, r, http.StatusUnprocessableEntity, "display_name must be a string.")
+			return
+		}
+		displayName = &dn
 	}
 
-	if val, ok := raw["avatarAssetId"]; ok {
-		if string(val) == "null" {
+	avatarVal, hasAvatar := raw["avatarAssetId"]
+	if !hasAvatar {
+		avatarVal, hasAvatar = raw["avatar_asset_id"]
+	}
+	if hasAvatar {
+		if string(avatarVal) == "null" {
 			clearAvatar = true
 		} else {
 			var id string
-			if err := json.Unmarshal(val, &id); err != nil {
+			if err := json.Unmarshal(avatarVal, &id); err != nil {
 				views.WriteProblem(w, r, http.StatusUnprocessableEntity, "avatarAssetId must be a valid UUID string or null.")
+				return
+			}
+			if _, err := uuid.Parse(id); err != nil {
+				views.WriteProblem(w, r, http.StatusUnprocessableEntity, "avatarAssetId must be a valid UUID format.")
 				return
 			}
 			avatarAssetID = &id
@@ -109,7 +125,7 @@ func (c *UserController) Follow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetID := chi.URLParam(r, "id")
+	targetID := mux.Vars(r)["id"]
 	if targetID == "" {
 		views.WriteProblem(w, r, http.StatusBadRequest, "User ID parameter is required.")
 		return
@@ -132,7 +148,7 @@ func (c *UserController) Unfollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetID := chi.URLParam(r, "id")
+	targetID := mux.Vars(r)["id"]
 	if targetID == "" {
 		views.WriteProblem(w, r, http.StatusBadRequest, "User ID parameter is required.")
 		return
@@ -149,7 +165,7 @@ func (c *UserController) Unfollow(w http.ResponseWriter, r *http.Request) {
 
 // GetFollowers handles GET /users/{id}/followers
 func (c *UserController) GetFollowers(w http.ResponseWriter, r *http.Request) {
-	targetID := chi.URLParam(r, "id")
+	targetID := mux.Vars(r)["id"]
 	if targetID == "" {
 		views.WriteProblem(w, r, http.StatusBadRequest, "User ID parameter is required.")
 		return
@@ -169,7 +185,7 @@ func (c *UserController) GetFollowers(w http.ResponseWriter, r *http.Request) {
 
 // GetFollowing handles GET /users/{id}/following
 func (c *UserController) GetFollowing(w http.ResponseWriter, r *http.Request) {
-	targetID := chi.URLParam(r, "id")
+	targetID := mux.Vars(r)["id"]
 	if targetID == "" {
 		views.WriteProblem(w, r, http.StatusBadRequest, "User ID parameter is required.")
 		return

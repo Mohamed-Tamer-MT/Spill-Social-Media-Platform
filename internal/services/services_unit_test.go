@@ -1442,9 +1442,9 @@ func TestCommentService_FullSuite(t *testing.T) {
 	if !errors.Is(err, services.ErrValidation) {
 		t.Errorf("expected ErrValidation on empty comment body, got %v", err)
 	}
-	_, err = svc.CreateComment(ctx, "user-1", "post-123", strings.Repeat("c", 501))
+	_, err = svc.CreateComment(ctx, "user-1", "post-123", strings.Repeat("c", 1001))
 	if !errors.Is(err, services.ErrValidation) {
-		t.Errorf("expected ErrValidation on comment body > 500, got %v", err)
+		t.Errorf("expected ErrValidation on comment body > 1000, got %v", err)
 	}
 	_, err = svc.CreateComment(ctx, "user-1", "nonexistent-post", "Valid comment")
 	if !errors.Is(err, services.ErrNotFound) {

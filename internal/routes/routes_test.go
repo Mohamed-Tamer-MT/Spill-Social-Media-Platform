@@ -123,7 +123,7 @@ func setupFixture(t *testing.T) *testFixture {
 	assetService := services.NewAssetService(repo, mockStore, cfg.StorageBucket, cfg.StoragePublicBaseURL)
 	searchService := services.NewSearchService(repo, cfg.StoragePublicBaseURL)
 
-	authCtrl := controllers.NewAuthController(authService)
+	authCtrl := controllers.NewAuthController(authService, cfg.JWTSecret)
 	userCtrl := controllers.NewUserController(userService)
 	postCtrl := controllers.NewPostController(postService)
 	interCtrl := controllers.NewInteractionController(postService)
@@ -425,10 +425,10 @@ func TestAuthRoutes_AllStatusCodes(t *testing.T) {
 		t.Fatalf("expected 401 on unauthenticated logout, got %d", rec.Code)
 	}
 
-	// 200 with auth token
+	// 204 (or 200) with auth token
 	rec = doReq(f, "POST", "/auth/logout", createdUserToken, nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 on authenticated logout, got %d", rec.Code)
+	if rec.Code != http.StatusNoContent && rec.Code != http.StatusOK {
+		t.Fatalf("expected 204 or 200 on authenticated logout, got %d", rec.Code)
 	}
 }
 

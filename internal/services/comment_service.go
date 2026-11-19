@@ -60,8 +60,8 @@ func (s *CommentService) ToCommentResponse(c *models.CommentDetail) views.Commen
 
 func (s *CommentService) CreateComment(ctx context.Context, currentUserID, postID, body string) (*views.CommentResponse, error) {
 	l := len([]rune(body))
-	if l < 1 || l > 500 {
-		return nil, fmt.Errorf("%w: comment body must be between 1 and 500 characters", ErrValidation)
+	if l < 1 || l > 1000 {
+		return nil, fmt.Errorf("%w: comment body must be between 1 and 1000 characters", ErrValidation)
 	}
 
 	// Verify post exists and is not soft-deleted

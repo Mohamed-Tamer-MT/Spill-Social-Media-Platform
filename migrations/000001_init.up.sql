@@ -199,6 +199,8 @@ create index idx_comments_search         on public.comments using gin (search_ve
 create index idx_likes_post              on public.likes (post_id);
 create index idx_shares_post             on public.shares (post_id);
 create index idx_follows_followee        on public.follows (followee_id);
+create index idx_follows_followee_keyset on public.follows (followee_id, created_at desc, follower_id desc);
+create index idx_follows_follower_keyset on public.follows (follower_id, created_at desc, followee_id desc);
 
 -- Auth
 create index idx_login_codes_email_recent on public.login_codes (email, created_at desc);
@@ -358,6 +360,15 @@ create trigger trg_users_avatar_guard
 -- ---------------------------------------------------------------------
 -- 9. Storage bucket (images are public by URL; writes go through the backend only)
 -- ---------------------------------------------------------------------
+create schema if not exists storage;
+create table if not exists storage.buckets (
+  id text primary key,
+  name text not null,
+  public boolean not null default false,
+  file_size_limit bigint,
+  allowed_mime_types text[]
+);
+
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('media', 'media', true, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
 on conflict (id) do update

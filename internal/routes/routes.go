@@ -5,7 +5,7 @@ import (
 
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/controllers"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/middleware"
-	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/mux"
 )
 
 type RouterConfig struct {
@@ -19,93 +19,90 @@ type RouterConfig struct {
 	JWTSecret             []byte
 }
 
-func SetupRouter(cfg RouterConfig) http.Handler {
-	r := chi.NewRouter()
+func SetupRouter(cfg RouterConfig) *mux.Router {
+	r := mux.NewRouter()
 
 	// Max request body size 1MB for all JSON payloads
 	r.Use(middleware.MaxBytes(1 << 20))
 
-	registerRoutes := func(router chi.Router) {
+	registerRoutes := func(router *mux.Router) {
 		// Auth endpoints
 		if cfg.AuthController != nil {
-			router.Route("/auth", func(r chi.Router) {
-				r.Post("/request-code", cfg.AuthController.RequestCode)
-				r.Post("/verify", cfg.AuthController.Verify)
-				r.Post("/signup", cfg.AuthController.Signup)
-				r.Post("/refresh", cfg.AuthController.Refresh)
-				r.Post("/logout", cfg.AuthController.Logout)
-			})
+			authSub := router.PathPrefix("/auth").Subrouter()
+			authSub.HandleFunc("/request-code", cfg.AuthController.RequestCode).Methods(http.MethodPost)
+			authSub.HandleFunc("/verify", cfg.AuthController.Verify).Methods(http.MethodPost)
+			authSub.HandleFunc("/signup", cfg.AuthController.Signup).Methods(http.MethodPost)
+			authSub.HandleFunc("/refresh", cfg.AuthController.Refresh).Methods(http.MethodPost)
+			authSub.HandleFunc("/logout", cfg.AuthController.Logout).Methods(http.MethodPost)
 		}
 
-		// Search
+		// Search (with OptionalAuth)
 		if cfg.SearchController != nil {
-			router.With(middleware.OptionalAuth(cfg.JWTSecret)).Get("/search", cfg.SearchController.Search)
+			router.Handle("/search", middleware.OptionalAuth(cfg.JWTSecret)(http.HandlerFunc(cfg.SearchController.Search))).Methods(http.MethodGet)
 		}
 
 		// Public users endpoints
 		if cfg.UserController != nil {
-			router.Get("/users/{username}", cfg.UserController.GetProfile)
-			router.Get("/users/{id}/followers", cfg.UserController.GetFollowers)
-			router.Get("/users/{id}/following", cfg.UserController.GetFollowing)
+			router.HandleFunc("/users/{id}/followers", cfg.UserController.GetFollowers).Methods(http.MethodGet)
+			router.HandleFunc("/users/{id}/following", cfg.UserController.GetFollowing).Methods(http.MethodGet)
+			router.HandleFunc("/users/{username}", cfg.UserController.GetProfile).Methods(http.MethodGet)
 		}
 
-		// Posts read endpoints
+		// Posts read endpoints (with OptionalAuth)
 		if cfg.PostController != nil {
-			router.With(middleware.OptionalAuth(cfg.JWTSecret)).Get("/posts/{id}", cfg.PostController.GetPost)
-			router.With(middleware.OptionalAuth(cfg.JWTSecret)).Get("/users/{id}/posts", cfg.PostController.GetUserPosts)
+			router.Handle("/users/{id}/posts", middleware.OptionalAuth(cfg.JWTSecret)(http.HandlerFunc(cfg.PostController.GetUserPosts))).Methods(http.MethodGet)
+			router.Handle("/posts/{id}", middleware.OptionalAuth(cfg.JWTSecret)(http.HandlerFunc(cfg.PostController.GetPost))).Methods(http.MethodGet)
 		}
 
 		// Comments read endpoint
 		if cfg.CommentController != nil {
-			router.Get("/posts/{id}/comments", cfg.CommentController.GetComments)
+			router.HandleFunc("/posts/{id}/comments", cfg.CommentController.GetComments).Methods(http.MethodGet)
 		}
 
 		// Protected endpoints (RequireAuth)
-		router.Group(func(r chi.Router) {
-			r.Use(middleware.RequireAuth(cfg.JWTSecret))
+		protected := router.NewRoute().Subrouter()
+		protected.Use(middleware.RequireAuth(cfg.JWTSecret))
 
-			// Me
-			if cfg.UserController != nil {
-				r.Get("/me", cfg.UserController.GetMe)
-				r.Patch("/me", cfg.UserController.UpdateMe)
-				r.Put("/users/{id}/follow", cfg.UserController.Follow)
-				r.Delete("/users/{id}/follow", cfg.UserController.Unfollow)
-			}
+		// Me
+		if cfg.UserController != nil {
+			protected.HandleFunc("/me", cfg.UserController.GetMe).Methods(http.MethodGet)
+			protected.HandleFunc("/me", cfg.UserController.UpdateMe).Methods(http.MethodPatch)
+			protected.HandleFunc("/users/{id}/follow", cfg.UserController.Follow).Methods(http.MethodPut)
+			protected.HandleFunc("/users/{id}/follow", cfg.UserController.Unfollow).Methods(http.MethodDelete)
+		}
 
-			// Posts & Feed
-			if cfg.PostController != nil {
-				r.Post("/posts", cfg.PostController.CreatePost)
-				r.Patch("/posts/{id}", cfg.PostController.UpdatePost)
-				r.Delete("/posts/{id}", cfg.PostController.DeletePost)
-				r.Get("/feed", cfg.PostController.GetFeed)
-			}
+		// Posts & Feed
+		if cfg.PostController != nil {
+			protected.HandleFunc("/feed", cfg.PostController.GetFeed).Methods(http.MethodGet)
+			protected.HandleFunc("/posts", cfg.PostController.CreatePost).Methods(http.MethodPost)
+			protected.HandleFunc("/posts/{id}", cfg.PostController.UpdatePost).Methods(http.MethodPatch)
+			protected.HandleFunc("/posts/{id}", cfg.PostController.DeletePost).Methods(http.MethodDelete)
+		}
 
-			// Interactions
-			if cfg.InteractionController != nil {
-				r.Put("/posts/{id}/like", cfg.InteractionController.Like)
-				r.Delete("/posts/{id}/like", cfg.InteractionController.Unlike)
-				r.Post("/posts/{id}/share", cfg.InteractionController.Share)
-			}
+		// Interactions
+		if cfg.InteractionController != nil {
+			protected.HandleFunc("/posts/{id}/like", cfg.InteractionController.Like).Methods(http.MethodPut)
+			protected.HandleFunc("/posts/{id}/like", cfg.InteractionController.Unlike).Methods(http.MethodDelete)
+			protected.HandleFunc("/posts/{id}/share", cfg.InteractionController.Share).Methods(http.MethodPost)
+		}
 
-			// Comments
-			if cfg.CommentController != nil {
-				r.Post("/posts/{id}/comments", cfg.CommentController.CreateComment)
-				r.Delete("/comments/{id}", cfg.CommentController.DeleteComment)
-			}
+		// Comments
+		if cfg.CommentController != nil {
+			protected.HandleFunc("/posts/{id}/comments", cfg.CommentController.CreateComment).Methods(http.MethodPost)
+			protected.HandleFunc("/comments/{id}", cfg.CommentController.DeleteComment).Methods(http.MethodDelete)
+		}
 
-			// Assets
-			if cfg.AssetController != nil {
-				r.Post("/assets", cfg.AssetController.CreateAsset)
-				r.Post("/assets/{id}/complete", cfg.AssetController.CompleteAsset)
-			}
-		})
+		// Assets
+		if cfg.AssetController != nil {
+			protected.HandleFunc("/assets", cfg.AssetController.CreateAsset).Methods(http.MethodPost)
+			protected.HandleFunc("/assets/{id}/complete", cfg.AssetController.CompleteAsset).Methods(http.MethodPost)
+		}
 	}
 
-	// Mount on root "/" and on "/api/v1"
+	// Mount on /api/v1 first so subrouter matches before root
+	v1Router := r.PathPrefix("/api/v1").Subrouter()
+	registerRoutes(v1Router)
 	registerRoutes(r)
-	r.Route("/api/v1", func(sub chi.Router) {
-		registerRoutes(sub)
-	})
 
 	return r
 }

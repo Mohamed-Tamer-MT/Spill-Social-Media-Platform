@@ -8,7 +8,7 @@ This document maps every requirement outlined in **Section 1 of `system-design.m
 
 | Requirement (Section 1) | HTTP Endpoint(s) | Business Service & Logic | Database Table(s) & Constraints | Automated Test Name(s) | Status | Gaps |
 |---|---|---|---|---|---|---|
-| **Gateway: Routing** | All routes mapped in `/internal/routes` | `chi.Mux` router wiring | N/A | `TestEveryOpenAPIEndpointStatusCodes` | Met | None |
+| **Gateway: Routing** | All routes mapped in `/internal/routes` | `gorilla/mux` router wiring | N/A | `TestEveryOpenAPIEndpointStatusCodes` | Met | None |
 | **Gateway: Request Logging** | All incoming HTTP requests | `middleware.Logger` | N/A | `TestMiddleware_Logger` | Met | None |
 | **Gateway: Panic Recovery** | All incoming HTTP requests | `middleware.Recoverer` | N/A | `TestMiddleware_Recover` | Met | None |
 | **Gateway: Max Body Size** | All incoming HTTP requests | `middleware.MaxBytes(1MB)` | N/A | `TestRoutes_MaxBytesMiddleware` | Met | None |

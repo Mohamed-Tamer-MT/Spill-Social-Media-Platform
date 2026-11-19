@@ -117,8 +117,13 @@ RETURNING id, username, email, display_name, birthdate, avatar_asset_id, role, f
 	)
 	if err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "P0001" {
-			return nil, fmt.Errorf("trigger validation error: %s", pgErr.Message)
+		if errors.As(err, &pgErr) {
+			if pgErr.Code == "P0001" {
+				return nil, fmt.Errorf("trigger validation error: %s", pgErr.Message)
+			}
+			if pgErr.Code == "22P02" {
+				return nil, fmt.Errorf("invalid uuid syntax: %s", pgErr.Message)
+			}
 		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -128,7 +133,9 @@ RETURNING id, username, email, display_name, birthdate, avatar_asset_id, role, f
 
 	// Fetch avatar storage key if present
 	if u.AvatarAssetID != nil {
-		_ = r.db.QueryRow(ctx, `SELECT storage_key FROM public.assets WHERE id = $1`, *u.AvatarAssetID).Scan(&u.AvatarStorageKey)
+		if err := r.db.QueryRow(ctx, `SELECT storage_key FROM public.assets WHERE id = $1`, *u.AvatarAssetID).Scan(&u.AvatarStorageKey); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("failed to load avatar storage key: %w", err)
+		}
 	}
 
 	return &u, nil

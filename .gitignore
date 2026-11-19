@@ -1,1 +1,25 @@
+# Environment variables
 .env
+.env.*
+!.env.example
+
+# Binaries and build outputs
+/bin/
+/dist/
+main
+verify
+seed
+*.exe
+*.test
+
+# Test outputs
+*.out
+coverage.html
+profile.pprof
+
+# OS and IDE files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

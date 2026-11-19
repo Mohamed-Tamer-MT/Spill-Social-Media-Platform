@@ -3,20 +3,26 @@ package controllers
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/auth"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/models"
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/services"
+	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/views"
 )
 
 type AuthController struct {
 	authService *services.AuthService
+	jwtSecret   []byte
 }
 
-func NewAuthController(authService *services.AuthService) *AuthController {
+func NewAuthController(authService *services.AuthService, jwtSecret []byte) *AuthController {
 	return &AuthController{
 		authService: authService,
+		jwtSecret:   jwtSecret,
 	}
 }
 
@@ -48,39 +54,18 @@ type LogoutRequest struct {
 	RefreshTokenCamel string `json:"refreshToken"`
 }
 
-type UserResponse struct {
-	ID          string `json:"id"`
-	Username    string `json:"username"`
-	DisplayName string `json:"display_name"`
-	Role        string `json:"role"`
-}
-
-type VerifyResponse struct {
-	NewUser      bool          `json:"new_user"`
-	AccessToken  string        `json:"access_token,omitempty"`
-	RefreshToken string        `json:"refresh_token,omitempty"`
-	SignupToken  string        `json:"signup_token,omitempty"`
-	User         *UserResponse `json:"user,omitempty"`
-}
-
-type TokensResponse struct {
-	User         *UserResponse `json:"user,omitempty"`
-	AccessToken  string        `json:"access_token"`
-	RefreshToken string        `json:"refresh_token"`
-}
-
 // RequestCode handles POST /auth/request-code.
 // Always returns 202 Accepted for syntactically valid emails to prevent email enumeration.
 func (c *AuthController) RequestCode(w http.ResponseWriter, r *http.Request) {
 	var req RequestCodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "invalid request body"})
+		views.WriteProblem(w, r, http.StatusUnprocessableEntity, "invalid request body")
 		return
 	}
 
 	trimmedEmail := strings.TrimSpace(req.Email)
 	if trimmedEmail == "" || !strings.Contains(trimmedEmail, "@") {
-		respondJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "valid email is required"})
+		views.WriteProblem(w, r, http.StatusUnprocessableEntity, "valid email is required")
 		return
 	}
 
@@ -97,35 +82,37 @@ func (c *AuthController) RequestCode(w http.ResponseWriter, r *http.Request) {
 func (c *AuthController) Verify(w http.ResponseWriter, r *http.Request) {
 	var req VerifyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "invalid request body"})
+		views.WriteProblem(w, r, http.StatusUnprocessableEntity, "invalid request body")
 		return
 	}
 
 	trimmedEmail := strings.TrimSpace(req.Email)
 	trimmedCode := strings.TrimSpace(req.Code)
 	if trimmedEmail == "" || len(trimmedCode) != 6 {
-		respondJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "email and 6-digit code are required"})
+		views.WriteProblem(w, r, http.StatusUnprocessableEntity, "email and 6-digit code are required")
 		return
 	}
 
 	result, err := c.authService.VerifyCode(r.Context(), trimmedEmail, trimmedCode, r.UserAgent())
 	if err != nil {
 		if errors.Is(err, services.ErrTooManyAttempts) {
-			respondJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+			views.WriteProblem(w, r, http.StatusUnauthorized, err.Error())
 			return
 		}
 		if errors.Is(err, services.ErrInvalidCredentials) {
-			respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or expired verification code"})
+			views.WriteProblem(w, r, http.StatusUnauthorized, "invalid or expired verification code")
 			return
 		}
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "verification failed"})
+		views.WriteProblem(w, r, http.StatusInternalServerError, "verification failed")
 		return
 	}
 
 	if result.IsNewUser {
-		respondJSON(w, http.StatusOK, VerifyResponse{
-			NewUser:     true,
-			SignupToken: result.SignupToken,
+		writeJSON(w, http.StatusOK, views.VerifyCodeResponse{
+			Action:           "signup",
+			NewUser:          true,
+			SignupToken:      result.SignupToken,
+			SignupTokenSnake: result.SignupToken,
 		})
 		return
 	}
@@ -142,16 +129,13 @@ func (c *AuthController) Verify(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	respondJSON(w, http.StatusOK, VerifyResponse{
-		NewUser:      false,
-		AccessToken:  result.AccessToken,
-		RefreshToken: result.RefreshToken,
-		User: &UserResponse{
-			ID:          result.User.ID,
-			Username:    result.User.Username,
-			DisplayName: result.User.DisplayName,
-			Role:        result.User.Role,
-		},
+	writeJSON(w, http.StatusOK, views.VerifyCodeResponse{
+		Action:            "login",
+		NewUser:           false,
+		AccessToken:       result.AccessToken,
+		RefreshToken:      result.RefreshToken,
+		AccessTokenSnake:  result.AccessToken,
+		RefreshTokenSnake: result.RefreshToken,
 	})
 }
 
@@ -159,7 +143,7 @@ func (c *AuthController) Verify(w http.ResponseWriter, r *http.Request) {
 func (c *AuthController) Signup(w http.ResponseWriter, r *http.Request) {
 	var req SignupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "invalid request body"})
+		views.WriteProblem(w, r, http.StatusUnprocessableEntity, "invalid request body")
 		return
 	}
 
@@ -176,7 +160,7 @@ func (c *AuthController) Signup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if signupToken == "" {
-		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "signup token is required"})
+		views.WriteProblem(w, r, http.StatusUnauthorized, "signup token is required")
 		return
 	}
 
@@ -188,25 +172,25 @@ func (c *AuthController) Signup(w http.ResponseWriter, r *http.Request) {
 	tokens, user, err := c.authService.Signup(r.Context(), signupToken, req.Username, displayName, req.Birthdate, r.UserAgent())
 	if err != nil {
 		if strings.Contains(err.Error(), "invalid signup token") {
-			respondJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+			views.WriteProblem(w, r, http.StatusUnauthorized, err.Error())
 			return
 		}
 		if errors.Is(err, services.ErrInvalidUsername) ||
 			errors.Is(err, services.ErrInvalidDisplayName) ||
 			errors.Is(err, services.ErrInvalidBirthdate) ||
 			errors.Is(err, services.ErrUnderage) {
-			respondJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+			views.WriteProblem(w, r, http.StatusUnprocessableEntity, err.Error())
 			return
 		}
 		if errors.Is(err, models.ErrUsernameTaken) {
-			respondJSON(w, http.StatusConflict, map[string]string{"error": "username is already taken"})
+			views.WriteProblem(w, r, http.StatusConflict, "username is already taken")
 			return
 		}
 		if errors.Is(err, models.ErrEmailRegistered) {
-			respondJSON(w, http.StatusConflict, map[string]string{"error": "email is already registered"})
+			views.WriteProblem(w, r, http.StatusConflict, "email is already registered")
 			return
 		}
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "signup failed"})
+		views.WriteProblem(w, r, http.StatusInternalServerError, "signup failed")
 		return
 	}
 
@@ -221,15 +205,22 @@ func (c *AuthController) Signup(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	respondJSON(w, http.StatusCreated, TokensResponse{
-		User: &UserResponse{
-			ID:          user.ID,
-			Username:    user.Username,
-			DisplayName: user.DisplayName,
-			Role:        user.Role,
+	writeJSON(w, http.StatusCreated, views.SignupResponse{
+		AccessToken:       tokens.AccessToken,
+		RefreshToken:      tokens.RefreshToken,
+		AccessTokenSnake:  tokens.AccessToken,
+		RefreshTokenSnake: tokens.RefreshToken,
+		User: views.PrivateUserResponse{
+			ID:             user.ID,
+			Username:       user.Username,
+			Email:          user.Email,
+			DisplayName:    user.DisplayName,
+			Birthdate:      user.Birthdate.Format("2006-01-02"),
+			Role:           user.Role,
+			FollowerCount:  user.FollowerCount,
+			FollowingCount: user.FollowingCount,
+			CreatedAt:      user.CreatedAt.Format(time.RFC3339),
 		},
-		AccessToken:  tokens.AccessToken,
-		RefreshToken: tokens.RefreshToken,
 	})
 }
 
@@ -249,13 +240,13 @@ func (c *AuthController) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if refreshToken == "" {
-		respondJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "refresh token is required"})
+		views.WriteProblem(w, r, http.StatusUnprocessableEntity, "refresh token is required")
 		return
 	}
 
 	tokens, err := c.authService.RefreshToken(r.Context(), refreshToken, r.UserAgent())
 	if err != nil {
-		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid, expired, or revoked refresh token"})
+		views.WriteProblem(w, r, http.StatusUnauthorized, "invalid, expired, or revoked refresh token")
 		return
 	}
 
@@ -270,22 +261,45 @@ func (c *AuthController) Refresh(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	respondJSON(w, http.StatusOK, TokensResponse{
-		AccessToken:  tokens.AccessToken,
-		RefreshToken: tokens.RefreshToken,
+	writeJSON(w, http.StatusOK, views.TokenResponse{
+		AccessToken:       tokens.AccessToken,
+		RefreshToken:      tokens.RefreshToken,
+		AccessTokenSnake:  tokens.AccessToken,
+		RefreshTokenSnake: tokens.RefreshToken,
 	})
 }
 
 // Logout handles POST /auth/logout.
+// Requires Bearer access token authorization and revokes the provided refresh token.
 func (c *AuthController) Logout(w http.ResponseWriter, r *http.Request) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
-		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "authorization header required"})
+		views.WriteProblem(w, r, http.StatusUnauthorized, "authorization header required")
 		return
 	}
 
+	parts := strings.SplitN(authHeader, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		views.WriteProblem(w, r, http.StatusUnauthorized, "invalid authorization header format, expected Bearer <token>")
+		return
+	}
+
+	tokenStr := strings.TrimSpace(parts[1])
+	if len(c.jwtSecret) > 0 {
+		if _, err := auth.ParseAndVerifyAccessToken(tokenStr, c.jwtSecret); err != nil {
+			views.WriteProblem(w, r, http.StatusUnauthorized, "invalid or expired access token")
+			return
+		}
+	}
+
 	var req LogoutRequest
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	if r.Body != nil {
+		err := json.NewDecoder(r.Body).Decode(&req)
+		if err != nil && err != io.EOF {
+			views.WriteProblem(w, r, http.StatusBadRequest, "invalid request body")
+			return
+		}
+	}
 
 	refreshToken := req.RefreshToken
 	if refreshToken == "" {
@@ -308,13 +322,5 @@ func (c *AuthController) Logout(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 	})
 
-	respondJSON(w, http.StatusOK, map[string]string{
-		"message": "successfully logged out",
-	})
-}
-
-func respondJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
+	w.WriteHeader(http.StatusNoContent)
 }

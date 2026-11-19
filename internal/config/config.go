@@ -49,7 +49,7 @@ func Load() (*Config, error) {
 
 	migURL := os.Getenv("MIGRATION_DATABASE_URL")
 	if migURL == "" {
-		return nil, fmt.Errorf("MIGRATION_DATABASE_URL is required")
+		migURL = dbURL
 	}
 
 	port := os.Getenv("HTTP_PORT")

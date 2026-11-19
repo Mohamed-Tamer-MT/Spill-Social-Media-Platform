@@ -7,6 +7,7 @@
 package views
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -19,8 +20,27 @@ import (
 	"time"
 
 	"github.com/TheAmgadX/Spill-Social-Media-Platform/internal/models"
-	"github.com/go-chi/chi/v5/middleware"
 )
+
+type contextKey string
+
+const reqIDContextKey contextKey = "requestID"
+
+// GetReqID retrieves the request ID from the context if present.
+func GetReqID(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if id, ok := ctx.Value(reqIDContextKey).(string); ok {
+		return id
+	}
+	return ""
+}
+
+// WithReqID returns a new context containing the given request ID.
+func WithReqID(ctx context.Context, reqID string) context.Context {
+	return context.WithValue(ctx, reqIDContextKey, reqID)
+}
 
 // ---------------------------------------------------------------------------
 // Pagination
@@ -227,23 +247,31 @@ type CompleteAssetResponse struct {
 
 // VerifyCodeResponse is returned by POST /auth/verify.
 type VerifyCodeResponse struct {
-	Action       string `json:"action"` // "login" or "signup"
-	AccessToken  string `json:"accessToken,omitempty"`
-	RefreshToken string `json:"refreshToken,omitempty"`
-	SignupToken  string `json:"signupToken,omitempty"`
+	Action            string `json:"action"` // "login" or "signup"
+	NewUser           bool   `json:"new_user,omitempty"`
+	AccessToken       string `json:"accessToken,omitempty"`
+	RefreshToken      string `json:"refreshToken,omitempty"`
+	SignupToken       string `json:"signupToken,omitempty"`
+	AccessTokenSnake  string `json:"access_token,omitempty"`
+	RefreshTokenSnake string `json:"refresh_token,omitempty"`
+	SignupTokenSnake  string `json:"signup_token,omitempty"`
 }
 
 // SignupResponse is returned by POST /auth/signup.
 type SignupResponse struct {
-	AccessToken  string              `json:"accessToken"`
-	RefreshToken string              `json:"refreshToken"`
-	User         PrivateUserResponse `json:"user"`
+	AccessToken       string              `json:"accessToken"`
+	RefreshToken      string              `json:"refreshToken"`
+	User              PrivateUserResponse `json:"user"`
+	AccessTokenSnake  string              `json:"access_token,omitempty"`
+	RefreshTokenSnake string              `json:"refresh_token,omitempty"`
 }
 
 // TokenResponse is returned by POST /auth/refresh.
 type TokenResponse struct {
-	AccessToken  string `json:"accessToken"`
-	RefreshToken string `json:"refreshToken"`
+	AccessToken       string `json:"accessToken"`
+	RefreshToken      string `json:"refreshToken"`
+	AccessTokenSnake  string `json:"access_token,omitempty"`
+	RefreshTokenSnake string `json:"refresh_token,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +334,7 @@ func DecodeCursor(cursorStr string) (time.Time, string, error) {
 
 // WriteProblem writes an RFC 9457 application/problem+json response.
 func WriteProblem(w http.ResponseWriter, r *http.Request, status int, detail string) {
-	reqID := middleware.GetReqID(r.Context())
+	reqID := GetReqID(r.Context())
 	if reqID == "" {
 		var b [8]byte
 		_, _ = rand.Read(b[:])
